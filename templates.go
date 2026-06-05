@@ -1,10 +1,13 @@
 package channelz
 
 import (
+	"fmt"
 	"io"
+	"strings"
 	"text/template"
 	"time"
 
+	routev3 "github.com/envoyproxy/go-control-plane/envoy/config/route/v3"
 	log "google.golang.org/grpc/grpclog"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -18,6 +21,9 @@ var (
 	serversTemplate    = parseTemplate("servers", serversTemplateHTML)
 	serverTemplate     = parseTemplate("server", serverTemplateHTML)
 	socketTemplate     = parseTemplate("socket", socketTemplateHTML)
+	xdsListenerTemplate = parseTemplate("xds-listener", xdsListenerTemplateHTML)
+	xdsRouteTemplate    = parseTemplate("xds-route", xdsRouteTemplateHTML)
+	xdsClusterTemplate  = parseTemplate("xds-cluster", xdsClusterTemplateHTML)
 	footerTemplate     = parseTemplate("footer", footerTemplateHTML)
 )
 
@@ -32,9 +38,39 @@ func parseTemplate(name, html string) *template.Template {
 
 func getFuncs() template.FuncMap {
 	return template.FuncMap{
-		"timestamp": formatTimestamp,
-		"link":      createHyperlink,
+		"timestamp":    formatTimestamp,
+		"link":         createHyperlink,
+		"isXds":        isXdsTarget,
+		"matchSummary": routeMatchSummary,
 	}
+}
+
+func isXdsTarget(target string) bool {
+	_, _, ok := parseXdsTarget(target)
+	return ok
+}
+
+func routeMatchSummary(m *routev3.RouteMatch) string {
+	if m == nil {
+		return ""
+	}
+	parts := []string{}
+	switch ps := m.GetPathSpecifier().(type) {
+	case *routev3.RouteMatch_Prefix:
+		parts = append(parts, fmt.Sprintf("prefix=%q", ps.Prefix))
+	case *routev3.RouteMatch_Path:
+		parts = append(parts, fmt.Sprintf("path=%q", ps.Path))
+	case *routev3.RouteMatch_SafeRegex:
+		parts = append(parts, fmt.Sprintf("regex=%q", ps.SafeRegex.GetRegex()))
+	case *routev3.RouteMatch_ConnectMatcher_:
+		parts = append(parts, "connect")
+	case *routev3.RouteMatch_PathSeparatedPrefix:
+		parts = append(parts, fmt.Sprintf("path_separated_prefix=%q", ps.PathSeparatedPrefix))
+	}
+	for _, h := range m.GetHeaders() {
+		parts = append(parts, fmt.Sprintf("header[%s]", h.GetName()))
+	}
+	return strings.Join(parts, "\n")
 }
 
 func formatTimestamp(ts *timestamppb.Timestamp) string {

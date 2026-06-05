@@ -1,0 +1,6 @@
+{
+  "enabledMcpjsonServers": [
+    "grafana",
+    "grafana-pedregal"
+  ]
+}

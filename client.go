@@ -5,34 +5,50 @@ import (
 	"strings"
 
 	"github.com/pkg/errors"
+	csdsgrpc "github.com/envoyproxy/go-control-plane/envoy/service/status/v3"
 	"google.golang.org/grpc"
 	channelzgrpc "google.golang.org/grpc/channelz/grpc_channelz_v1"
 )
 
 func (h *grpcChannelzHandler) connect() (channelzgrpc.ChannelzClient, error) {
 	if h.client != nil {
-		// Already connected
 		return h.client, nil
 	}
-
-	host := getHostFromBindAddress(h.bindAddress)
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	client, err := newChannelzClient(host, h.dialOpts...)
-	if err != nil {
+	if err := h.dial(); err != nil {
 		return nil, err
 	}
-	h.client = client
 	return h.client, nil
 }
 
-func newChannelzClient(dialString string, opts ...grpc.DialOption) (channelzgrpc.ChannelzClient, error) {
-	conn, err := grpc.Dial(dialString, opts...)
-	if err != nil {
-		return nil, errors.Wrapf(err, "error dialing to %s", dialString)
+func (h *grpcChannelzHandler) connectCSDS() (csdsgrpc.ClientStatusDiscoveryServiceClient, error) {
+	if h.csdsClient != nil {
+		return h.csdsClient, nil
 	}
-	client := channelzgrpc.NewChannelzClient(conn)
-	return client, nil
+	if err := h.dial(); err != nil {
+		return nil, err
+	}
+	return h.csdsClient, nil
+}
+
+func (h *grpcChannelzHandler) dial() error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.conn != nil {
+		return nil
+	}
+	host := getHostFromBindAddress(h.bindAddress)
+	conn, err := grpc.Dial(host, h.dialOpts...)
+	if err != nil {
+		return errors.Wrapf(err, "error dialing to %s", host)
+	}
+	h.conn = conn
+	if h.client == nil {
+		h.client = channelzgrpc.NewChannelzClient(conn)
+	}
+	if h.csdsClient == nil {
+		h.csdsClient = csdsgrpc.NewClientStatusDiscoveryServiceClient(conn)
+	}
+	return nil
 }
 
 func getHostFromBindAddress(bindAddress string) string {
