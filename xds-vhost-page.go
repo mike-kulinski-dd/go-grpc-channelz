@@ -6,6 +6,7 @@ import (
 	"io"
 	"sort"
 
+	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	routev3 "github.com/envoyproxy/go-control-plane/envoy/config/route/v3"
 	log "google.golang.org/grpc/grpclog"
 )
@@ -13,15 +14,15 @@ import (
 // WriteXdsVirtualHostPage writes the VHDS view for an xDS-resolved channel.
 func (h *grpcChannelzHandler) WriteXdsVirtualHostPage(w io.Writer, channelID int64) {
 	writeHeader(w, fmt.Sprintf("xDS VirtualHost for channel %d", channelID))
-	h.writeXdsVirtualHost(w, channelID)
-	writeFooter(w)
-}
-
-func (h *grpcChannelzHandler) writeXdsVirtualHost(w io.Writer, channelID int64) {
 	data := h.getXdsVirtualHost(channelID)
 	if err := xdsVirtualHostTemplate.Execute(w, data); err != nil {
 		log.Errorf("channelz: executing template: %v", err)
 	}
+	writeRawDump(w,
+		rawDumpSection{Title: "Node", Msg: data.Node},
+		rawDumpSection{Title: "VirtualHost", Msg: data.VirtualHost},
+	)
+	writeFooter(w)
 }
 
 type xdsVirtualHostPageData struct {
@@ -31,6 +32,7 @@ type xdsVirtualHostPageData struct {
 	ResourceName     string
 	VHDSResourceName string
 	VirtualHost      *routev3.VirtualHost
+	Node             *corev3.Node
 	Error            string
 }
 
@@ -58,6 +60,7 @@ func (h *grpcChannelzHandler) getXdsVirtualHost(channelID int64) *xdsVirtualHost
 		d.Error = fmt.Sprintf("CSDS FetchClientStatus failed: %v", err)
 		return d
 	}
+	d.Node = cfg.GetNode()
 	resources := newXdsResources(cfg)
 
 	d.VirtualHost = findVirtualHostForChannel(resources, resource)

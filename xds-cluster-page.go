@@ -9,10 +9,10 @@ import (
 	"strconv"
 	"sync"
 
-	csdsgrpc "github.com/envoyproxy/go-control-plane/envoy/service/status/v3"
 	clusterv3 "github.com/envoyproxy/go-control-plane/envoy/config/cluster/v3"
 	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	endpointv3 "github.com/envoyproxy/go-control-plane/envoy/config/endpoint/v3"
+	csdsgrpc "github.com/envoyproxy/go-control-plane/envoy/service/status/v3"
 	log "google.golang.org/grpc/grpclog"
 )
 
@@ -56,15 +56,16 @@ func portFromHostPort(target string) uint32 {
 // joined with the channel's channelz subchannels by address.
 func (h *grpcChannelzHandler) WriteXdsClusterPage(w io.Writer, channelID int64, clusterName string) {
 	writeHeader(w, fmt.Sprintf("xDS Cluster %s (channel %d)", clusterName, channelID))
-	h.writeXdsCluster(w, channelID, clusterName)
-	writeFooter(w)
-}
-
-func (h *grpcChannelzHandler) writeXdsCluster(w io.Writer, channelID int64, clusterName string) {
 	d := h.getXdsCluster(channelID, clusterName)
 	if err := xdsClusterTemplate.Execute(w, d); err != nil {
 		log.Errorf("channelz: executing template: %v", err)
 	}
+	writeRawDump(w,
+		rawDumpSection{Title: "Node", Msg: d.Node},
+		rawDumpSection{Title: "Cluster (CDS)", Msg: d.Cluster},
+		rawDumpSection{Title: "ClusterLoadAssignment (EDS)", Msg: d.Assignment},
+	)
+	writeFooter(w)
 }
 
 type endpointRow struct {
@@ -98,6 +99,7 @@ type dnsSubchannelRow struct {
 type xdsClusterPageData struct {
 	ChannelID            int64
 	ClusterName          string
+	Node                 *corev3.Node
 	Cluster              *clusterv3.Cluster
 	IsDNSCluster         bool
 	EDSServiceName       string
@@ -135,6 +137,7 @@ func (h *grpcChannelzHandler) getXdsCluster(channelID int64, clusterName string)
 		d.Error = fmt.Sprintf("CSDS FetchClientStatus failed: %v", cfgErr)
 		return d
 	}
+	d.Node = cfg.GetNode()
 	resources := newXdsResources(cfg)
 
 	cluster, ok := resources.clusters[clusterName]

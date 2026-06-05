@@ -2,6 +2,7 @@ package channelz
 
 import (
 	"fmt"
+	"html"
 	"io"
 	"strings"
 	"text/template"
@@ -9,6 +10,7 @@ import (
 
 	routev3 "github.com/envoyproxy/go-control-plane/envoy/config/route/v3"
 	log "google.golang.org/grpc/grpclog"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -80,6 +82,31 @@ func writeHeader(w io.Writer, title string) {
 	if err := headerTemplate.Execute(w, headerData{Title: title}); err != nil {
 		log.Errorf("channelz: executing template: %v", err)
 	}
+}
+
+// writeRawDump renders a collapsible <details> block containing the YAML dump
+// of one or more proto messages — the underlying config for the page.
+func writeRawDump(w io.Writer, sections ...rawDumpSection) {
+	if len(sections) == 0 {
+		return
+	}
+	fmt.Fprintln(w, `<details style="margin-top:1em" open><summary><b>Raw config dump</b></summary>`)
+	for _, s := range sections {
+		if s.Title != "" {
+			fmt.Fprintf(w, "<h4>%s</h4>\n", html.EscapeString(s.Title))
+		}
+		if s.Msg == nil || !s.Msg.ProtoReflect().IsValid() {
+			fmt.Fprintln(w, "<pre><i>(not available)</i></pre>")
+			continue
+		}
+		fmt.Fprintf(w, "<pre>%s</pre>\n", html.EscapeString(protoToYAML(s.Msg)))
+	}
+	fmt.Fprintln(w, `</details>`)
+}
+
+type rawDumpSection struct {
+	Title string
+	Msg   proto.Message
 }
 
 func writeFooter(w io.Writer) {

@@ -4,15 +4,20 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 
 	clusterv3 "github.com/envoyproxy/go-control-plane/envoy/config/cluster/v3"
 	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	endpointv3 "github.com/envoyproxy/go-control-plane/envoy/config/endpoint/v3"
 	routev3 "github.com/envoyproxy/go-control-plane/envoy/config/route/v3"
 	csdsgrpc "github.com/envoyproxy/go-control-plane/envoy/service/status/v3"
+	"buf.build/go/protoyaml"
 	log "google.golang.org/grpc/grpclog"
 	"google.golang.org/protobuf/encoding/prototext"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protoreflect"
+	"google.golang.org/protobuf/reflect/protoregistry"
+	"google.golang.org/protobuf/types/known/emptypb"
 )
 
 const (
@@ -146,4 +151,60 @@ func protoToString(m proto.Message) string {
 		return ""
 	}
 	return string(b)
+}
+
+// protoToYAML renders a proto message as YAML via buf's protoyaml, which is
+// proto-aware (handles google.protobuf.Any, well-known types, etc.) and emits
+// snake_case field names.
+func protoToYAML(m proto.Message) string {
+	if m == nil {
+		return ""
+	}
+	b, err := protoyaml.MarshalOptions{
+		Indent:        2,
+		UseProtoNames: true,
+		Resolver:      anyTolerantResolver{},
+	}.Marshal(m)
+	if err != nil {
+		log.Errorf("channelz: protoyaml.Marshal failed for %T: %v", m, err)
+		return fmt.Sprintf("# protoyaml.Marshal error: %v\n", err)
+	}
+	return string(b)
+}
+
+// loggedUnknownAnyURLs dedupes the "unknown Any type" warnings so we log each
+// missing type exactly once per process — enough to tell the operator which
+// proto package to add to xds_proto_registry.go, without flooding the logs.
+var loggedUnknownAnyURLs sync.Map
+
+// anyTolerantResolver wraps protoregistry.GlobalTypes so that Any messages
+// whose type isn't linked into this binary (e.g. Envoy filter configs like
+// envoy.extensions.filters.http.lua.v3.LuaPerRoute) don't fail the whole dump.
+// Unknown URLs resolve to google.protobuf.Empty; protojson then emits the Any
+// as {"@type": "<url>"} with the opaque value omitted, preserving the type URL
+// so the reader at least knows what was there.
+type anyTolerantResolver struct{}
+
+func (anyTolerantResolver) FindMessageByName(name protoreflect.FullName) (protoreflect.MessageType, error) {
+	return protoregistry.GlobalTypes.FindMessageByName(name)
+}
+
+func (anyTolerantResolver) FindMessageByURL(url string) (protoreflect.MessageType, error) {
+	if mt, err := protoregistry.GlobalTypes.FindMessageByURL(url); err == nil {
+		return mt, nil
+	}
+	if _, loaded := loggedUnknownAnyURLs.LoadOrStore(url, struct{}{}); !loaded {
+		log.Warningf("channelz: Any type %q is not registered in this binary; "+
+			"rendering as @type-only. Add a blank import of the proto package "+
+			"in xds_proto_registry.go to expand it.", url)
+	}
+	return (&emptypb.Empty{}).ProtoReflect().Type(), nil
+}
+
+func (anyTolerantResolver) FindExtensionByName(field protoreflect.FullName) (protoreflect.ExtensionType, error) {
+	return protoregistry.GlobalTypes.FindExtensionByName(field)
+}
+
+func (anyTolerantResolver) FindExtensionByNumber(message protoreflect.FullName, field protoreflect.FieldNumber) (protoreflect.ExtensionType, error) {
+	return protoregistry.GlobalTypes.FindExtensionByNumber(message, field)
 }
