@@ -5,6 +5,7 @@ import (
 	"path"
 	"sync"
 
+	csdsgrpc "github.com/envoyproxy/go-control-plane/envoy/service/status/v3"
 	"google.golang.org/grpc"
 	channelzgrpc "google.golang.org/grpc/channelz/grpc_channelz_v1"
 	"google.golang.org/grpc/credentials/insecure"
@@ -59,8 +60,10 @@ type grpcChannelzHandler struct {
 	// the target server's bind address
 	bindAddress string
 
-	// The client connection (lazily initialized)
-	client channelzgrpc.ChannelzClient
+	// Shared gRPC connection (lazily initialized) and derived stubs.
+	conn       *grpc.ClientConn
+	client     channelzgrpc.ChannelzClient
+	csdsClient csdsgrpc.ClientStatusDiscoveryServiceClient
 
 	// []grpc.DialOption to use for grpc.Dial
 	dialOpts []grpc.DialOption

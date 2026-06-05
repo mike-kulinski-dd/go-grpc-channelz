@@ -53,7 +53,12 @@ const channelTemplateHTML = `
 	</tr>
 	<tr>
         <th>Target</th>
-        <td>{{.Channel.Data.Target}}</td>
+        <td>
+			{{.Channel.Data.Target}}
+			{{if isXds .Channel.Data.Target}}
+				&nbsp;[<a href="{{link "xds" "vhost" .Channel.Ref.ChannelId}}">view xDS config</a>]
+			{{end}}
+		</td>
 	</tr>
 	<tr>
         <th>Subchannels</th>
