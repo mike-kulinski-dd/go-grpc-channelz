@@ -7,7 +7,9 @@ import (
 	"net"
 	"sort"
 	"strconv"
+	"sync"
 
+	csdsgrpc "github.com/envoyproxy/go-control-plane/envoy/service/status/v3"
 	clusterv3 "github.com/envoyproxy/go-control-plane/envoy/config/cluster/v3"
 	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	endpointv3 "github.com/envoyproxy/go-control-plane/envoy/config/endpoint/v3"
@@ -109,9 +111,28 @@ type xdsClusterPageData struct {
 func (h *grpcChannelzHandler) getXdsCluster(channelID int64, clusterName string) *xdsClusterPageData {
 	d := &xdsClusterPageData{ChannelID: channelID, ClusterName: clusterName}
 
-	cfg, err := h.fetchClientStatus(context.Background())
-	if err != nil {
-		d.Error = fmt.Sprintf("CSDS FetchClientStatus failed: %v", err)
+	// Fetch CSDS config and the channel's subchannels in parallel — they're
+	// independent RPCs (and the subchannel fan-out below is the slow part).
+	var (
+		cfg       *csdsgrpc.ClientConfig
+		cfgErr    error
+		subByAddr map[string]int64
+		subInfo   map[int64]subchannelInfo
+		wg        sync.WaitGroup
+	)
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		cfg, cfgErr = h.fetchClientStatus(context.Background())
+	}()
+	go func() {
+		defer wg.Done()
+		subByAddr, subInfo = h.subchannelsByAddress(channelID)
+	}()
+	wg.Wait()
+
+	if cfgErr != nil {
+		d.Error = fmt.Sprintf("CSDS FetchClientStatus failed: %v", cfgErr)
 		return d
 	}
 	resources := newXdsResources(cfg)
@@ -132,9 +153,6 @@ func (h *grpcChannelzHandler) getXdsCluster(channelID int64, clusterName string)
 	} else {
 		d.Assignment = resources.endpoints[d.EDSServiceName]
 	}
-
-	// Build addr → subchannel map for the channel.
-	subByAddr, subInfo := h.subchannelsByAddress(channelID)
 
 	// For DNS clusters, collect this cluster's ports so we can attribute
 	// subchannels to it by port (we don't have IPs to match against).
@@ -244,15 +262,55 @@ func (h *grpcChannelzHandler) subchannelsByAddress(channelID int64) (map[string]
 	if ch == nil || ch.GetChannel() == nil {
 		return byAddr, info
 	}
-	for _, ref := range ch.GetChannel().GetSubchannelRef() {
-		sub := h.getSubchannel(ref.GetSubchannelId())
-		if sub == nil || sub.GetSubchannel() == nil {
+	refs := ch.GetChannel().GetSubchannelRef()
+
+	// Fan out the per-subchannel GetSubchannel RPCs. The shared gRPC client
+	// multiplexes them on a single HTTP/2 connection, so a bounded worker
+	// pool turns N sequential round trips into ~N/parallelism.
+	const parallelism = 32
+	workers := parallelism
+	if len(refs) < workers {
+		workers = len(refs)
+	}
+	type result struct {
+		id     int64
+		name   string
+		target string
+		ok     bool
+	}
+	in := make(chan int64, len(refs))
+	out := make(chan result, len(refs))
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for id := range in {
+				sub := h.getSubchannel(id)
+				if sub == nil || sub.GetSubchannel() == nil {
+					continue
+				}
+				s := sub.GetSubchannel()
+				out <- result{
+					id:     s.GetRef().GetSubchannelId(),
+					name:   s.GetRef().GetName(),
+					target: s.GetData().GetTarget(),
+					ok:     true,
+				}
+			}
+		}()
+	}
+	for _, ref := range refs {
+		in <- ref.GetSubchannelId()
+	}
+	close(in)
+	go func() { wg.Wait(); close(out) }()
+	for r := range out {
+		if !r.ok {
 			continue
 		}
-		s := sub.GetSubchannel()
-		id := s.GetRef().GetSubchannelId()
-		info[id] = subchannelInfo{Name: s.GetRef().GetName(), Target: s.GetData().GetTarget()}
-		byAddr[s.GetData().GetTarget()] = id
+		info[r.id] = subchannelInfo{Name: r.name, Target: r.target}
+		byAddr[r.target] = r.id
 	}
 	return byAddr, info
 }
