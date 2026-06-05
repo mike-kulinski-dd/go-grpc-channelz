@@ -17,8 +17,7 @@ type channelzHandler interface {
 	WriteSubchannelPage(io.Writer, int64)
 	WriteServerPage(io.Writer, int64)
 	WriteSocketPage(io.Writer, int64)
-	WriteXdsListenerPage(io.Writer, int64)
-	WriteXdsRoutePage(io.Writer, int64, string)
+	WriteXdsVirtualHostPage(io.Writer, int64)
 	WriteXdsClusterPage(io.Writer, int64, string)
 }
 
@@ -67,32 +66,23 @@ func createRouter(prefix string, handler channelzHandler) *chi.Mux {
 			}
 			handler.WriteServerPage(w, server)
 		})
-		r.Get("/xds/listener/{channel}", func(w http.ResponseWriter, r *http.Request) {
+		r.Get("/xds/vhost/{channel}", func(w http.ResponseWriter, r *http.Request) {
 			channelStr := chi.URLParam(r, "channel")
 			channel, err := strconv.ParseInt(channelStr, 10, 0)
 			if err != nil {
 				log.Errorf("channelz: Unable to parse int for channel ID. %s", channelStr)
 				return
 			}
-			handler.WriteXdsListenerPage(w, channel)
+			handler.WriteXdsVirtualHostPage(w, channel)
 		})
-		r.Get("/xds/route/{channel}/{routeName}", func(w http.ResponseWriter, r *http.Request) {
+		r.Get("/xds/cluster/{channel}/*", func(w http.ResponseWriter, r *http.Request) {
 			channelStr := chi.URLParam(r, "channel")
 			channel, err := strconv.ParseInt(channelStr, 10, 0)
 			if err != nil {
 				log.Errorf("channelz: Unable to parse int for channel ID. %s", channelStr)
 				return
 			}
-			handler.WriteXdsRoutePage(w, channel, chi.URLParam(r, "routeName"))
-		})
-		r.Get("/xds/cluster/{channel}/{clusterName}", func(w http.ResponseWriter, r *http.Request) {
-			channelStr := chi.URLParam(r, "channel")
-			channel, err := strconv.ParseInt(channelStr, 10, 0)
-			if err != nil {
-				log.Errorf("channelz: Unable to parse int for channel ID. %s", channelStr)
-				return
-			}
-			handler.WriteXdsClusterPage(w, channel, chi.URLParam(r, "clusterName"))
+			handler.WriteXdsClusterPage(w, channel, chi.URLParam(r, "*"))
 		})
 		r.Get("/socket/{socket}", func(w http.ResponseWriter, r *http.Request) {
 			socketStr := chi.URLParam(r, "socket")

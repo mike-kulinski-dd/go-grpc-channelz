@@ -8,9 +8,7 @@ import (
 	clusterv3 "github.com/envoyproxy/go-control-plane/envoy/config/cluster/v3"
 	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	endpointv3 "github.com/envoyproxy/go-control-plane/envoy/config/endpoint/v3"
-	listenerv3 "github.com/envoyproxy/go-control-plane/envoy/config/listener/v3"
 	routev3 "github.com/envoyproxy/go-control-plane/envoy/config/route/v3"
-	hcmv3 "github.com/envoyproxy/go-control-plane/envoy/extensions/filters/network/http_connection_manager/v3"
 	csdsgrpc "github.com/envoyproxy/go-control-plane/envoy/service/status/v3"
 	log "google.golang.org/grpc/grpclog"
 	"google.golang.org/protobuf/encoding/prototext"
@@ -18,13 +16,12 @@ import (
 )
 
 const (
-	listenerTypeURL = "type.googleapis.com/envoy.config.listener.v3.Listener"
-	routeTypeURL    = "type.googleapis.com/envoy.config.route.v3.RouteConfiguration"
-	clusterTypeURL  = "type.googleapis.com/envoy.config.cluster.v3.Cluster"
-	endpointTypeURL = "type.googleapis.com/envoy.config.endpoint.v3.ClusterLoadAssignment"
+	virtualHostTypeURL = "type.googleapis.com/envoy.config.route.v3.VirtualHost"
+	clusterTypeURL     = "type.googleapis.com/envoy.config.cluster.v3.Cluster"
+	endpointTypeURL    = "type.googleapis.com/envoy.config.endpoint.v3.ClusterLoadAssignment"
 )
 
-// parseXdsTarget extracts the authority and listener resource name from an xds:// target.
+// parseXdsTarget extracts the authority and resource name from an xds:// target.
 // gRPC-Go target format: xds:[//<authority>]/<resource>
 // xds:///foo:443           → authority="", resource="foo:443"
 // xds://my.authority/foo   → authority="my.authority", resource="foo"
@@ -64,18 +61,16 @@ func (h *grpcChannelzHandler) fetchClientStatus(ctx context.Context) (*csdsgrpc.
 
 // xdsResources groups GenericXdsConfigs by typeUrl, keyed by resource name.
 type xdsResources struct {
-	listeners map[string]*listenerv3.Listener
-	routes    map[string]*routev3.RouteConfiguration
-	clusters  map[string]*clusterv3.Cluster
-	endpoints map[string]*endpointv3.ClusterLoadAssignment
+	virtualHosts map[string]*routev3.VirtualHost
+	clusters     map[string]*clusterv3.Cluster
+	endpoints    map[string]*endpointv3.ClusterLoadAssignment
 }
 
 func newXdsResources(cfg *csdsgrpc.ClientConfig) *xdsResources {
 	r := &xdsResources{
-		listeners: map[string]*listenerv3.Listener{},
-		routes:    map[string]*routev3.RouteConfiguration{},
-		clusters:  map[string]*clusterv3.Cluster{},
-		endpoints: map[string]*endpointv3.ClusterLoadAssignment{},
+		virtualHosts: map[string]*routev3.VirtualHost{},
+		clusters:     map[string]*clusterv3.Cluster{},
+		endpoints:    map[string]*endpointv3.ClusterLoadAssignment{},
 	}
 	if cfg == nil {
 		return r
@@ -86,19 +81,12 @@ func newXdsResources(cfg *csdsgrpc.ClientConfig) *xdsResources {
 			continue
 		}
 		switch gx.GetTypeUrl() {
-		case listenerTypeURL:
-			m := &listenerv3.Listener{}
+		case virtualHostTypeURL:
+			m := &routev3.VirtualHost{}
 			if err := any.UnmarshalTo(m); err == nil {
-				r.listeners[gx.GetName()] = m
+				r.virtualHosts[gx.GetName()] = m
 			} else {
-				log.Errorf("channelz: unmarshal LDS %s: %v", gx.GetName(), err)
-			}
-		case routeTypeURL:
-			m := &routev3.RouteConfiguration{}
-			if err := any.UnmarshalTo(m); err == nil {
-				r.routes[gx.GetName()] = m
-			} else {
-				log.Errorf("channelz: unmarshal RDS %s: %v", gx.GetName(), err)
+				log.Errorf("channelz: unmarshal VHDS %s: %v", gx.GetName(), err)
 			}
 		case clusterTypeURL:
 			m := &clusterv3.Cluster{}
@@ -117,40 +105,6 @@ func newXdsResources(cfg *csdsgrpc.ClientConfig) *xdsResources {
 		}
 	}
 	return r
-}
-
-// extractRouteConfigName returns the RDS route config name referenced by the
-// listener's HCM api_listener, or "" if the listener inlines its route config
-// (in which case extractInlineRouteConfig will return non-nil).
-func extractRouteConfigName(l *listenerv3.Listener) string {
-	hcm := extractHCM(l)
-	if hcm == nil {
-		return ""
-	}
-	if rds := hcm.GetRds(); rds != nil {
-		return rds.GetRouteConfigName()
-	}
-	return ""
-}
-
-func extractInlineRouteConfig(l *listenerv3.Listener) *routev3.RouteConfiguration {
-	hcm := extractHCM(l)
-	if hcm == nil {
-		return nil
-	}
-	return hcm.GetRouteConfig()
-}
-
-func extractHCM(l *listenerv3.Listener) *hcmv3.HttpConnectionManager {
-	if l == nil || l.GetApiListener() == nil || l.GetApiListener().GetApiListener() == nil {
-		return nil
-	}
-	hcm := &hcmv3.HttpConnectionManager{}
-	if err := l.GetApiListener().GetApiListener().UnmarshalTo(hcm); err != nil {
-		log.Errorf("channelz: unmarshal HCM for listener %s: %v", l.GetName(), err)
-		return nil
-	}
-	return hcm
 }
 
 // formatSocketAddress renders a core.SocketAddress as host:port.

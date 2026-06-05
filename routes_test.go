@@ -39,13 +39,9 @@ func (m *mockHandler) WriteSocketPage(w io.Writer, c int64) {
 	// nolint:errcheck
 	w.Write([]byte(fmt.Sprintf("socket %d", c)))
 }
-func (m *mockHandler) WriteXdsListenerPage(w io.Writer, c int64) {
+func (m *mockHandler) WriteXdsVirtualHostPage(w io.Writer, c int64) {
 	// nolint:errcheck
-	w.Write([]byte(fmt.Sprintf("xds-listener %d", c)))
-}
-func (m *mockHandler) WriteXdsRoutePage(w io.Writer, c int64, n string) {
-	// nolint:errcheck
-	w.Write([]byte(fmt.Sprintf("xds-route %d %s", c, n)))
+	w.Write([]byte(fmt.Sprintf("xds-vhost %d", c)))
 }
 func (m *mockHandler) WriteXdsClusterPage(w io.Writer, c int64, n string) {
 	// nolint:errcheck
@@ -68,8 +64,7 @@ func TestCreateRouter(t *testing.T) {
 		"/channelz/subchannel/5":     "subchannel 5",
 		"/channelz/server/3":         "server 3",
 		"/channelz/socket/3":         "socket 3",
-		"/channelz/xds/listener/7":          "xds-listener 7",
-		"/channelz/xds/route/7/my-route":    "xds-route 7 my-route",
+		"/channelz/xds/vhost/7":              "xds-vhost 7",
 		"/channelz/xds/cluster/7/my-cluster": "xds-cluster 7 my-cluster",
 
 		// Non matched or errornous paths

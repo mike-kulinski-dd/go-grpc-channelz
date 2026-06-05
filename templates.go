@@ -21,9 +21,8 @@ var (
 	serversTemplate    = parseTemplate("servers", serversTemplateHTML)
 	serverTemplate     = parseTemplate("server", serverTemplateHTML)
 	socketTemplate     = parseTemplate("socket", socketTemplateHTML)
-	xdsListenerTemplate = parseTemplate("xds-listener", xdsListenerTemplateHTML)
-	xdsRouteTemplate    = parseTemplate("xds-route", xdsRouteTemplateHTML)
-	xdsClusterTemplate  = parseTemplate("xds-cluster", xdsClusterTemplateHTML)
+	xdsVirtualHostTemplate = parseTemplate("xds-vhost", xdsVirtualHostTemplateHTML)
+	xdsClusterTemplate     = parseTemplate("xds-cluster", xdsClusterTemplateHTML)
 	footerTemplate     = parseTemplate("footer", footerTemplateHTML)
 )
 
