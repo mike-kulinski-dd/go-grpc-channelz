@@ -19,6 +19,8 @@ type channelzHandler interface {
 	WriteSocketPage(io.Writer, int64)
 	WriteXdsVirtualHostPage(io.Writer, int64)
 	WriteXdsClusterPage(io.Writer, int64, string)
+	WriteSubchannelPoolsPage(io.Writer, int64)
+	WriteSubchannelPoolPage(io.Writer, int64, string, string)
 }
 
 var pathPrefix string
@@ -83,6 +85,26 @@ func createRouter(prefix string, handler channelzHandler) *chi.Mux {
 				return
 			}
 			handler.WriteXdsClusterPage(w, channel, chi.URLParam(r, "*"))
+		})
+		r.Get("/channel/{channel}/pools", func(w http.ResponseWriter, r *http.Request) {
+			channelStr := chi.URLParam(r, "channel")
+			channel, err := strconv.ParseInt(channelStr, 10, 0)
+			if err != nil {
+				log.Errorf("channelz: Unable to parse int for channel ID. %s", channelStr)
+				return
+			}
+			handler.WriteSubchannelPoolsPage(w, channel)
+		})
+		r.Get("/channel/{channel}/pool", func(w http.ResponseWriter, r *http.Request) {
+			channelStr := chi.URLParam(r, "channel")
+			channel, err := strconv.ParseInt(channelStr, 10, 0)
+			if err != nil {
+				log.Errorf("channelz: Unable to parse int for channel ID. %s", channelStr)
+				return
+			}
+			addr := r.URL.Query().Get("addr")
+			cluster := r.URL.Query().Get("cluster")
+			handler.WriteSubchannelPoolPage(w, channel, addr, cluster)
 		})
 		r.Get("/socket/{socket}", func(w http.ResponseWriter, r *http.Request) {
 			socketStr := chi.URLParam(r, "socket")

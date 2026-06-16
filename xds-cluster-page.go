@@ -75,6 +75,7 @@ type endpointRow struct {
 	Locality       string
 	SubchannelID   int64 // 0 means no match
 	SubchannelName string
+	PoolSize       int // number of subchannels for this address; >1 means a duplicate pool
 }
 
 type localityGroup struct {
@@ -90,12 +91,6 @@ type unmatchedSubchannelRow struct {
 	Target       string
 }
 
-type dnsSubchannelRow struct {
-	SubchannelID int64
-	Name         string
-	Target       string
-}
-
 type xdsClusterPageData struct {
 	ChannelID            int64
 	ClusterName          string
@@ -105,7 +100,7 @@ type xdsClusterPageData struct {
 	EDSServiceName       string
 	Assignment           *endpointv3.ClusterLoadAssignment
 	Localities           []localityGroup
-	DNSSubchannels       []dnsSubchannelRow
+	Pools                []poolRow
 	UnmatchedSubchannels []unmatchedSubchannelRow
 	Error                string
 }
@@ -118,7 +113,7 @@ func (h *grpcChannelzHandler) getXdsCluster(channelID int64, clusterName string)
 	var (
 		cfg       *csdsgrpc.ClientConfig
 		cfgErr    error
-		subByAddr map[string]int64
+		subByAddr map[string][]int64
 		subInfo   map[int64]subchannelInfo
 		wg        sync.WaitGroup
 	)
@@ -174,17 +169,9 @@ func (h *grpcChannelzHandler) getXdsCluster(channelID int64, clusterName string)
 	if d.IsDNSCluster {
 		for id, info := range subInfo {
 			if thisClusterPorts[portFromHostPort(info.Target)] {
-				d.DNSSubchannels = append(d.DNSSubchannels, dnsSubchannelRow{
-					SubchannelID: id,
-					Name:         info.Name,
-					Target:       info.Target,
-				})
 				matched[id] = true
 			}
 		}
-		sort.Slice(d.DNSSubchannels, func(i, j int) bool {
-			return d.DNSSubchannels[i].SubchannelID < d.DNSSubchannels[j].SubchannelID
-		})
 	}
 	if d.Assignment != nil {
 		for _, lle := range d.Assignment.GetEndpoints() {
@@ -201,10 +188,13 @@ func (h *grpcChannelzHandler) getXdsCluster(channelID int64, clusterName string)
 					Weight:       ep.GetLoadBalancingWeight().GetValue(),
 					Locality:     group.Locality,
 				}
-				if id, ok := subByAddr[addr]; ok {
-					row.SubchannelID = id
-					row.SubchannelName = subInfo[id].Name
-					matched[id] = true
+				if ids, ok := subByAddr[addr]; ok && len(ids) > 0 {
+					row.SubchannelID = ids[0]
+					row.SubchannelName = subInfo[ids[0]].Name
+					row.PoolSize = len(ids)
+					for _, id := range ids {
+						matched[id] = true
+					}
 				}
 				group.Rows = append(group.Rows, row)
 			}
@@ -247,18 +237,58 @@ func (h *grpcChannelzHandler) getXdsCluster(channelID int64, clusterName string)
 	sort.Slice(d.UnmatchedSubchannels, func(i, j int) bool {
 		return d.UnmatchedSubchannels[i].SubchannelID < d.UnmatchedSubchannels[j].SubchannelID
 	})
+
+	// Pool view: every subchannel attributed to this cluster (DNS or EDS),
+	// grouped by remote address. A pool with more than one subchannel means
+	// the dynamic-scaling path opened additional connections to the same IP.
+	pools := map[string][]int64{}
+	for id := range matched {
+		info, ok := subInfo[id]
+		if !ok {
+			continue
+		}
+		pools[info.Target] = append(pools[info.Target], id)
+	}
+	for addr, ids := range pools {
+		sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+		row := poolRow{
+			Address:       addr,
+			Count:         len(ids),
+			SubchannelIDs: ids,
+		}
+		for _, id := range ids {
+			si := subInfo[id]
+			row.CallsStarted += si.CallsStarted
+			row.CallsSucceeded += si.CallsSucceeded
+			row.CallsFailed += si.CallsFailed
+		}
+		d.Pools = append(d.Pools, row)
+	}
+	sort.Slice(d.Pools, func(i, j int) bool {
+		if d.Pools[i].Count != d.Pools[j].Count {
+			return d.Pools[i].Count > d.Pools[j].Count
+		}
+		return d.Pools[i].Address < d.Pools[j].Address
+	})
 	return d
 }
 
 type subchannelInfo struct {
-	Name   string
-	Target string
+	Name           string
+	Target         string
+	State          string
+	CallsStarted   int64
+	CallsSucceeded int64
+	CallsFailed    int64
+	SocketIDs      []int64
 }
 
-// subchannelsByAddress builds a map of address (host:port) → subchannel ID,
-// plus an info map keyed by subchannel ID, for every subchannel of the channel.
-func (h *grpcChannelzHandler) subchannelsByAddress(channelID int64) (map[string]int64, map[int64]subchannelInfo) {
-	byAddr := map[string]int64{}
+// subchannelsByAddress builds a map of address (host:port) → subchannel IDs
+// (slice — multiple subchannels can share an address once the dynamic-scaling
+// path opens additional connections past MAX_CONCURRENT_STREAMS), plus an info
+// map keyed by subchannel ID, for every subchannel of the channel.
+func (h *grpcChannelzHandler) subchannelsByAddress(channelID int64) (map[string][]int64, map[int64]subchannelInfo) {
+	byAddr := map[string][]int64{}
 	info := map[int64]subchannelInfo{}
 
 	ch := h.getChannel(channelID)
@@ -276,10 +306,9 @@ func (h *grpcChannelzHandler) subchannelsByAddress(channelID int64) (map[string]
 		workers = len(refs)
 	}
 	type result struct {
-		id     int64
-		name   string
-		target string
-		ok     bool
+		id   int64
+		info subchannelInfo
+		ok   bool
 	}
 	in := make(chan int64, len(refs))
 	out := make(chan result, len(refs))
@@ -294,11 +323,21 @@ func (h *grpcChannelzHandler) subchannelsByAddress(channelID int64) (map[string]
 					continue
 				}
 				s := sub.GetSubchannel()
+				si := subchannelInfo{
+					Name:           s.GetRef().GetName(),
+					Target:         s.GetData().GetTarget(),
+					State:          s.GetData().GetState().GetState().String(),
+					CallsStarted:   s.GetData().GetCallsStarted(),
+					CallsSucceeded: s.GetData().GetCallsSucceeded(),
+					CallsFailed:    s.GetData().GetCallsFailed(),
+				}
+				for _, sr := range s.GetSocketRef() {
+					si.SocketIDs = append(si.SocketIDs, sr.GetSocketId())
+				}
 				out <- result{
-					id:     s.GetRef().GetSubchannelId(),
-					name:   s.GetRef().GetName(),
-					target: s.GetData().GetTarget(),
-					ok:     true,
+					id:   s.GetRef().GetSubchannelId(),
+					info: si,
+					ok:   true,
 				}
 			}
 		}()
@@ -312,8 +351,11 @@ func (h *grpcChannelzHandler) subchannelsByAddress(channelID int64) (map[string]
 		if !r.ok {
 			continue
 		}
-		info[r.id] = subchannelInfo{Name: r.name, Target: r.target}
-		byAddr[r.target] = r.id
+		info[r.id] = r.info
+		byAddr[r.info.Target] = append(byAddr[r.info.Target], r.id)
+	}
+	for addr := range byAddr {
+		sort.Slice(byAddr[addr], func(i, j int) bool { return byAddr[addr][i] < byAddr[addr][j] })
 	}
 	return byAddr, info
 }
@@ -353,7 +395,11 @@ const xdsClusterTemplateHTML = `
 {{if .Error}}
 	<p><b>Error:</b> {{.Error}}</p>
 {{end}}
-<p><a href="{{link "channel" .ChannelID}}">&laquo; back to channel {{.ChannelID}}</a></p>
+<p>
+	<a href="{{link "channel" .ChannelID}}">&laquo; back to channel {{.ChannelID}}</a>
+	&nbsp;|&nbsp;
+	<a href="{{link "channel" .ChannelID "pools"}}">view subchannel pools</a>
+</p>
 {{if .Cluster}}
 <table frame=box cellspacing=0 cellpadding=2 class="vertical">
 	<tr><th>Cluster name</th><td>{{.Cluster.Name}}</td></tr>
@@ -363,26 +409,32 @@ const xdsClusterTemplateHTML = `
 	{{with .Cluster.LrsServer}}<tr><th>LRS server</th><td>configured</td></tr>{{end}}
 </table>
 
-{{if .IsDNSCluster}}
-<h3>DNS-resolved subchannels</h3>
-<p>This cluster is {{.Cluster.GetType}}; endpoints are DNS-resolved client-side. Subchannels are attributed by port.</p>
-{{if .DNSSubchannels}}
+<h3>Subchannel pools</h3>
+<p>Subchannels attributed to this cluster, grouped by remote address. A pool of more than one subchannel indicates the dynamic-scaling path opened additional connections to the same IP.</p>
+{{if .Pools}}
 <table frame=box cellspacing=0 cellpadding=2>
-	<tr class="header"><th>Subchannel</th><th>Resolved address</th></tr>
-	{{range .DNSSubchannels}}
+	<tr class="header">
+		<th>Address</th>
+		<th># Subchannels</th>
+		<th>Calls started</th>
+		<th>Calls failed</th>
+	</tr>
+	{{range .Pools}}
 	<tr>
-		<td><a href="{{link "subchannel" .SubchannelID}}"><b>{{.SubchannelID}}</b> {{.Name}}</a></td>
-		<td>{{.Target}}</td>
+		<td><a href="{{link "channel" $.ChannelID "pool"}}?addr={{.Address | urlquery}}&cluster={{$.ClusterName | urlquery}}">{{.Address}}</a></td>
+		<td>{{.Count}}</td>
+		<td>{{.CallsStarted}}</td>
+		<td>{{.CallsFailed}}</td>
 	</tr>
 	{{end}}
 </table>
 {{else}}
-<p><i>No subchannels matched this cluster's port(s).</i></p>
+<p><i>No subchannels attributed to this cluster.</i></p>
 {{end}}
 
+{{if .IsDNSCluster}}
 <h3>Configured DNS endpoints (from CDS load_assignment)</h3>
-{{if .Localities}}
-{{else}}
+{{if not .Localities}}
 <p><i>No inline endpoints configured.</i></p>
 {{end}}
 {{else}}
@@ -406,6 +458,9 @@ const xdsClusterTemplateHTML = `
 		<td>
 			{{if .SubchannelID}}
 				<a href="{{link "subchannel" .SubchannelID}}"><b>{{.SubchannelID}}</b> {{.SubchannelName}}</a>
+				{{if gt .PoolSize 1}}
+					&nbsp;<a href="{{link "channel" $.ChannelID "pool"}}?addr={{.Address | urlquery}}&cluster={{$.ClusterName | urlquery}}">({{.PoolSize}} in pool)</a>
+				{{end}}
 			{{else}}
 				&mdash;
 			{{end}}
