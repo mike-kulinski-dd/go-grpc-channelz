@@ -25,6 +25,8 @@ var (
 	socketTemplate     = parseTemplate("socket", socketTemplateHTML)
 	xdsVirtualHostTemplate = parseTemplate("xds-vhost", xdsVirtualHostTemplateHTML)
 	xdsClusterTemplate     = parseTemplate("xds-cluster", xdsClusterTemplateHTML)
+	subchannelPoolsTemplate = parseTemplate("subchannel-pools", subchannelPoolsTemplateHTML)
+	subchannelPoolTemplate  = parseTemplate("subchannel-pool", subchannelPoolTemplateHTML)
 	footerTemplate     = parseTemplate("footer", footerTemplateHTML)
 )
 

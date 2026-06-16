@@ -47,6 +47,14 @@ func (m *mockHandler) WriteXdsClusterPage(w io.Writer, c int64, n string) {
 	// nolint:errcheck
 	w.Write([]byte(fmt.Sprintf("xds-cluster %d %s", c, n)))
 }
+func (m *mockHandler) WriteSubchannelPoolsPage(w io.Writer, c int64) {
+	// nolint:errcheck
+	w.Write([]byte(fmt.Sprintf("pools %d", c)))
+}
+func (m *mockHandler) WriteSubchannelPoolPage(w io.Writer, c int64, addr, cluster string) {
+	// nolint:errcheck
+	w.Write([]byte(fmt.Sprintf("pool %d %s %s", c, addr, cluster)))
+}
 
 func TestCreateRouter(t *testing.T) {
 	assert := assert.New(t)
@@ -66,6 +74,8 @@ func TestCreateRouter(t *testing.T) {
 		"/channelz/socket/3":         "socket 3",
 		"/channelz/xds/vhost/7":              "xds-vhost 7",
 		"/channelz/xds/cluster/7/my-cluster": "xds-cluster 7 my-cluster",
+		"/channelz/channel/4/pools":                "pools 4",
+		"/channelz/channel/4/pool?addr=1.2.3.4:80&cluster=c1": "pool 4 1.2.3.4:80 c1",
 
 		// Non matched or errornous paths
 		"/channelz/channel/x":    "",
