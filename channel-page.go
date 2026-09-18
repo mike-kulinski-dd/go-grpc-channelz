@@ -17,7 +17,12 @@ func (h *grpcChannelzHandler) WriteChannelPage(w io.Writer, channel int64) {
 }
 
 func (h *grpcChannelzHandler) writeChannel(w io.Writer, channel int64) {
-	if err := channelTemplate.Execute(w, h.getChannel(channel)); err != nil {
+	data := h.getChannel(channel)
+	if data == nil {
+		writeUnavailable(w)
+		return
+	}
+	if err := channelTemplate.Execute(w, data); err != nil {
 		log.Errorf("channelz: executing template: %v", err)
 	}
 }

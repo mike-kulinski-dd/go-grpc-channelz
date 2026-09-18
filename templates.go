@@ -121,6 +121,14 @@ type rawDumpSection struct {
 	Msg   proto.Message
 }
 
+// writeUnavailable renders a friendly message in place of a page whose data
+// couldn't be fetched (e.g. the target server is unreachable), instead of
+// executing a template against a nil response and producing a confusing
+// "nil pointer evaluating ..." template error.
+func writeUnavailable(w io.Writer) {
+	fmt.Fprintln(w, `<p><i>Unable to reach the target server. Check its connection and reload this page.</i></p>`)
+}
+
 func writeFooter(w io.Writer) {
 	if err := footerTemplate.Execute(w, nil); err != nil {
 		log.Errorf("channelz: executing template: %v", err)

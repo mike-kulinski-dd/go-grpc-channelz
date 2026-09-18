@@ -20,7 +20,12 @@ func (h *grpcChannelzHandler) WriteSubchannelPage(w io.Writer, subchannel int64)
 //
 // It includes neither a header nor footer, so you can embed this data in other pages.
 func (h *grpcChannelzHandler) writeSubchannel(w io.Writer, subchannel int64) {
-	if err := subChannelTemplate.Execute(w, h.getSubchannel(subchannel)); err != nil {
+	data := h.getSubchannel(subchannel)
+	if data == nil {
+		writeUnavailable(w)
+		return
+	}
+	if err := subChannelTemplate.Execute(w, data); err != nil {
 		log.Errorf("channelz: executing template: %v", err)
 	}
 }

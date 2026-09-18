@@ -12,7 +12,12 @@ import (
 //
 // It includes neither a header nor footer, so you can embed this data in other pages.
 func (h *grpcChannelzHandler) writeServers(w io.Writer) {
-	if err := serversTemplate.Execute(w, h.getServers()); err != nil {
+	data := h.getServers()
+	if data == nil {
+		writeUnavailable(w)
+		return
+	}
+	if err := serversTemplate.Execute(w, data); err != nil {
 		log.Errorf("channelz: executing template: %v", err)
 	}
 }

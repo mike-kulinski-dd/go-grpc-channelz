@@ -7,14 +7,78 @@ import (
 	"net"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
+	"unicode"
 
 	clusterv3 "github.com/envoyproxy/go-control-plane/envoy/config/cluster/v3"
 	corev3 "github.com/envoyproxy/go-control-plane/envoy/config/core/v3"
 	endpointv3 "github.com/envoyproxy/go-control-plane/envoy/config/endpoint/v3"
+	subsetv3 "github.com/envoyproxy/go-control-plane/envoy/extensions/load_balancing_policies/subset/v3"
 	csdsgrpc "github.com/envoyproxy/go-control-plane/envoy/service/status/v3"
 	log "google.golang.org/grpc/grpclog"
+	"google.golang.org/protobuf/types/known/anypb"
 )
+
+const subsetLbTypeURL = "type.googleapis.com/envoy.extensions.load_balancing_policies.subset.v3.Subset"
+
+// formatLbPolicy renders a cluster's effective load-balancing policy. The
+// newer extensible load_balancing_policy field supersedes the legacy
+// lb_policy enum when set (per the Cluster proto docs) — and since lb_policy
+// defaults to ROUND_ROBIN when unset, reading only the legacy field shows a
+// misleading policy for any cluster configured via load_balancing_policy
+// (e.g. LEAST_REQUEST wrapped in a subset selector).
+func formatLbPolicy(cluster *clusterv3.Cluster) string {
+	if policies := cluster.GetLoadBalancingPolicy().GetPolicies(); len(policies) > 0 {
+		if name := describeLbPolicy(policies[0].GetTypedExtensionConfig().GetTypedConfig(), 0); name != "" {
+			return name
+		}
+	}
+	return cluster.GetLbPolicy().String()
+}
+
+// describeLbPolicy returns a short display name (e.g. "LEAST_REQUEST") for a
+// load-balancing-policy typed extension config, unwrapping the subset
+// wrapper to show the real policy it selects between subsets.
+func describeLbPolicy(cfg *anypb.Any, depth int) string {
+	if cfg == nil || depth > 5 {
+		return ""
+	}
+	if cfg.GetTypeUrl() == subsetLbTypeURL {
+		var subset subsetv3.Subset
+		if err := cfg.UnmarshalTo(&subset); err != nil {
+			return "SUBSET"
+		}
+		if inner := subset.GetSubsetLbPolicy().GetPolicies(); len(inner) > 0 {
+			if name := describeLbPolicy(inner[0].GetTypedExtensionConfig().GetTypedConfig(), depth+1); name != "" {
+				return name
+			}
+		}
+		return "SUBSET"
+	}
+	return lbPolicyShortName(cfg.GetTypeUrl())
+}
+
+// lbPolicyShortName turns a load-balancing-policy type URL, e.g.
+// ".../load_balancing_policies.least_request.v3.LeastRequest", into a short
+// display name like "LEAST_REQUEST".
+func lbPolicyShortName(typeURL string) string {
+	name := typeURL
+	if idx := strings.LastIndexByte(name, '/'); idx >= 0 {
+		name = name[idx+1:]
+	}
+	if idx := strings.LastIndexByte(name, '.'); idx >= 0 {
+		name = name[idx+1:]
+	}
+	var b strings.Builder
+	for i, r := range name {
+		if i > 0 && unicode.IsUpper(r) {
+			b.WriteByte('_')
+		}
+		b.WriteRune(unicode.ToUpper(r))
+	}
+	return b.String()
+}
 
 // strictDNSPorts collects the ports used by STRICT_DNS / LOGICAL_DNS clusters'
 // inline LoadAssignments. DNS clusters don't appear in EDS (endpoints are
@@ -100,6 +164,7 @@ type xdsClusterPageData struct {
 	ClusterName          string
 	Node                 *corev3.Node
 	Cluster              *clusterv3.Cluster
+	LbPolicy             string
 	IsDNSCluster         bool
 	EDSServiceName       string
 	Assignment           *endpointv3.ClusterLoadAssignment
@@ -145,6 +210,7 @@ func (h *grpcChannelzHandler) getXdsCluster(channelID int64, clusterName string)
 		return d
 	}
 	d.Cluster = cluster
+	d.LbPolicy = formatLbPolicy(cluster)
 	d.EDSServiceName = edsServiceNameForCluster(cluster)
 	ct := cluster.GetType()
 	d.IsDNSCluster = ct == clusterv3.Cluster_STRICT_DNS || ct == clusterv3.Cluster_LOGICAL_DNS
@@ -415,7 +481,7 @@ const xdsClusterTemplateHTML = `
 <table frame=box cellspacing=0 cellpadding=2 class="vertical">
 	<tr><th>Cluster name</th><td>{{.Cluster.Name}}</td></tr>
 	<tr><th>Type</th><td>{{.Cluster.GetType}}</td></tr>
-	<tr><th>LB policy</th><td>{{.Cluster.GetLbPolicy}}</td></tr>
+	<tr><th>LB policy</th><td>{{.LbPolicy}}</td></tr>
 	<tr><th>EDS service</th><td>{{.EDSServiceName}}</td></tr>
 	{{with .Cluster.LrsServer}}<tr><th>LRS server</th><td>configured</td></tr>{{end}}
 </table>

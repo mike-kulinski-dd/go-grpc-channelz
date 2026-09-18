@@ -19,7 +19,12 @@ func (h *grpcChannelzHandler) WriteServerPage(w io.Writer, server int64) {
 //
 // It includes neither a header nor footer, so you can embed this data in other pages.
 func (h *grpcChannelzHandler) writeServer(w io.Writer, server int64) {
-	if err := serverTemplate.Execute(w, h.getServer(server)); err != nil {
+	data := h.getServer(server)
+	if data == nil {
+		writeUnavailable(w)
+		return
+	}
+	if err := serverTemplate.Execute(w, data); err != nil {
 		log.Errorf("channelz: executing template: %v", err)
 	}
 }
