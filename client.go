@@ -30,6 +30,20 @@ func (h *grpcChannelzHandler) connectCSDS() (csdsgrpc.ClientStatusDiscoveryServi
 	return h.csdsClient, nil
 }
 
+// reflectionResolver returns the lazily-created gRPC-reflection-backed proto
+// type resolver for this handler's connection, or nil if not yet dialed.
+func (h *grpcChannelzHandler) reflectionResolver() protoResolver {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.conn == nil {
+		return nil
+	}
+	if h.reflResolver == nil {
+		h.reflResolver = newReflectionResolver(h.conn)
+	}
+	return h.reflResolver
+}
+
 func (h *grpcChannelzHandler) dial() error {
 	h.mu.Lock()
 	defer h.mu.Unlock()

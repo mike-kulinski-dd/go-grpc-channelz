@@ -4,11 +4,9 @@ import (
 	"fmt"
 	"html"
 	"io"
-	"strings"
 	"text/template"
 	"time"
 
-	routev3 "github.com/envoyproxy/go-control-plane/envoy/config/route/v3"
 	log "google.golang.org/grpc/grpclog"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -41,10 +39,9 @@ func parseTemplate(name, html string) *template.Template {
 
 func getFuncs() template.FuncMap {
 	return template.FuncMap{
-		"timestamp":    formatTimestamp,
-		"link":         createHyperlink,
-		"isXds":        isXdsTarget,
-		"matchSummary": routeMatchSummary,
+		"timestamp": formatTimestamp,
+		"link":      createHyperlink,
+		"isXds":     isXdsTarget,
 	}
 }
 
@@ -53,27 +50,15 @@ func isXdsTarget(target string) bool {
 	return ok
 }
 
-func routeMatchSummary(m *routev3.RouteMatch) string {
-	if m == nil {
+// renderProtoYAMLHTML renders a proto message as HTML-escaped YAML for direct
+// use inside a <pre> block in a text/template (which does not auto-escape).
+// resolver expands any nested google.protobuf.Any fields; pass nil to fall
+// back to protoregistry.GlobalTypes.
+func renderProtoYAMLHTML(m proto.Message, resolver protoResolver) string {
+	if m == nil || !m.ProtoReflect().IsValid() {
 		return ""
 	}
-	parts := []string{}
-	switch ps := m.GetPathSpecifier().(type) {
-	case *routev3.RouteMatch_Prefix:
-		parts = append(parts, fmt.Sprintf("prefix=%q", ps.Prefix))
-	case *routev3.RouteMatch_Path:
-		parts = append(parts, fmt.Sprintf("path=%q", ps.Path))
-	case *routev3.RouteMatch_SafeRegex:
-		parts = append(parts, fmt.Sprintf("regex=%q", ps.SafeRegex.GetRegex()))
-	case *routev3.RouteMatch_ConnectMatcher_:
-		parts = append(parts, "connect")
-	case *routev3.RouteMatch_PathSeparatedPrefix:
-		parts = append(parts, fmt.Sprintf("path_separated_prefix=%q", ps.PathSeparatedPrefix))
-	}
-	for _, h := range m.GetHeaders() {
-		parts = append(parts, fmt.Sprintf("header[%s]", h.GetName()))
-	}
-	return strings.Join(parts, "\n")
+	return html.EscapeString(protoToYAML(m, resolver))
 }
 
 func formatTimestamp(ts *timestamppb.Timestamp) string {
@@ -88,7 +73,9 @@ func writeHeader(w io.Writer, title string) {
 
 // writeRawDump renders a collapsible <details> block containing the YAML dump
 // of one or more proto messages — the underlying config for the page.
-func writeRawDump(w io.Writer, sections ...rawDumpSection) {
+// resolver expands any nested google.protobuf.Any fields; pass nil to fall
+// back to protoregistry.GlobalTypes.
+func writeRawDump(w io.Writer, resolver protoResolver, sections ...rawDumpSection) {
 	if len(sections) == 0 {
 		return
 	}
@@ -101,7 +88,7 @@ func writeRawDump(w io.Writer, sections ...rawDumpSection) {
 			fmt.Fprintln(w, "<pre><i>(not available)</i></pre>")
 			continue
 		}
-		fmt.Fprintf(w, "<pre>%s</pre>\n", html.EscapeString(protoToYAML(s.Msg)))
+		fmt.Fprintf(w, "<pre>%s</pre>\n", html.EscapeString(protoToYAML(s.Msg, resolver)))
 	}
 	fmt.Fprintln(w, `</details>`)
 }

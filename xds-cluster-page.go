@@ -60,7 +60,7 @@ func (h *grpcChannelzHandler) WriteXdsClusterPage(w io.Writer, channelID int64, 
 	if err := xdsClusterTemplate.Execute(w, d); err != nil {
 		log.Errorf("channelz: executing template: %v", err)
 	}
-	writeRawDump(w,
+	writeRawDump(w, h.reflectionResolver(),
 		rawDumpSection{Title: "Node", Msg: d.Node},
 		rawDumpSection{Title: "Cluster (CDS)", Msg: d.Cluster},
 		rawDumpSection{Title: "ClusterLoadAssignment (EDS)", Msg: d.Assignment},

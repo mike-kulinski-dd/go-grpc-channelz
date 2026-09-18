@@ -61,9 +61,10 @@ type grpcChannelzHandler struct {
 	bindAddress string
 
 	// Shared gRPC connection (lazily initialized) and derived stubs.
-	conn       *grpc.ClientConn
-	client     channelzgrpc.ChannelzClient
-	csdsClient csdsgrpc.ClientStatusDiscoveryServiceClient
+	conn         *grpc.ClientConn
+	client       channelzgrpc.ChannelzClient
+	csdsClient   csdsgrpc.ClientStatusDiscoveryServiceClient
+	reflResolver *reflectionResolver
 
 	// []grpc.DialOption to use for grpc.Dial
 	dialOpts []grpc.DialOption

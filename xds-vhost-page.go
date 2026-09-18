@@ -18,7 +18,7 @@ func (h *grpcChannelzHandler) WriteXdsVirtualHostPage(w io.Writer, channelID int
 	if err := xdsVirtualHostTemplate.Execute(w, data); err != nil {
 		log.Errorf("channelz: executing template: %v", err)
 	}
-	writeRawDump(w,
+	writeRawDump(w, h.reflectionResolver(),
 		rawDumpSection{Title: "Node", Msg: data.Node},
 		rawDumpSection{Title: "VirtualHost", Msg: data.VirtualHost},
 	)
@@ -32,8 +32,23 @@ type xdsVirtualHostPageData struct {
 	ResourceName     string
 	VHDSResourceName string
 	VirtualHost      *routev3.VirtualHost
+	Routes           []xdsRouteRow
 	Node             *corev3.Node
 	Error            string
+}
+
+// xdsRouteRow is a Route pre-rendered for the template: the match condition is
+// dumped as YAML server-side (via renderProtoYAMLHTML) rather than distilled
+// into a lossy one-line summary.
+type xdsRouteRow struct {
+	MatchYAML        string
+	Cluster          string
+	WeightedClusters []weightedClusterRow
+}
+
+type weightedClusterRow struct {
+	Name   string
+	Weight uint32
 }
 
 func (h *grpcChannelzHandler) getXdsVirtualHost(channelID int64) *xdsVirtualHostPageData {
@@ -72,6 +87,21 @@ func (h *grpcChannelzHandler) getXdsVirtualHost(channelID int64) *xdsVirtualHost
 		sort.Strings(names)
 		d.Error = fmt.Sprintf("no VHDS resource matches %q (looked up as %q). CSDS dump contains %d VHDS resource(s): %v", resource, d.VHDSResourceName, len(names), names)
 		return d
+	}
+
+	resolver := h.reflectionResolver()
+	for _, route := range d.VirtualHost.GetRoutes() {
+		row := xdsRouteRow{
+			MatchYAML: renderProtoYAMLHTML(route.GetMatch(), resolver),
+			Cluster:   route.GetRoute().GetCluster(),
+		}
+		for _, wc := range route.GetRoute().GetWeightedClusters().GetClusters() {
+			row.WeightedClusters = append(row.WeightedClusters, weightedClusterRow{
+				Name:   wc.GetName(),
+				Weight: wc.GetWeight().GetValue(),
+			})
+		}
+		d.Routes = append(d.Routes, row)
 	}
 	return d
 }
@@ -113,11 +143,8 @@ const xdsVirtualHostTemplateHTML = `
 	<tr><th>Channel</th><td><a href="{{link "channel" .ChannelID}}">{{.ChannelID}}</a></td></tr>
 	<tr><th>Target</th><td>{{.Target}}</td></tr>
 	<tr><th>Authority</th><td>{{if .Authority}}{{.Authority}}{{else}}<i>(default)</i>{{end}}</td></tr>
-	<tr><th>Resource name</th><td>{{.ResourceName}}</td></tr>
 	<tr><th>VHDS resource name</th><td>{{.VHDSResourceName}}</td></tr>
 {{if .VirtualHost}}
-	<tr><th>VirtualHost name</th><td>{{.VirtualHost.Name}}</td></tr>
-	<tr><th>Domains</th><td>{{range $i, $d := .VirtualHost.Domains}}{{if $i}}, {{end}}{{$d}}{{end}}</td></tr>
 </table>
 
 <h3>Routes</h3>
@@ -127,19 +154,17 @@ const xdsVirtualHostTemplateHTML = `
 		<th>Cluster</th>
 		<th>Weighted clusters</th>
 	</tr>
-	{{range .VirtualHost.Routes}}
+	{{range .Routes}}
 	<tr>
-		<td><pre>{{.Match | matchSummary}}</pre></td>
+		<td><pre>{{.MatchYAML}}</pre></td>
 		<td>
-			{{with .GetRoute.GetCluster}}
+			{{with .Cluster}}
 				<a href="{{link "xds" "cluster" $.ChannelID .}}">{{.}}</a>
 			{{end}}
 		</td>
 		<td>
-			{{with .GetRoute.GetWeightedClusters}}
-				{{range .Clusters}}
-					<a href="{{link "xds" "cluster" $.ChannelID .Name}}">{{.Name}}</a> ({{.Weight.Value}})<br/>
-				{{end}}
+			{{range .WeightedClusters}}
+				<a href="{{link "xds" "cluster" $.ChannelID .Name}}">{{.Name}}</a> ({{.Weight}})<br/>
 			{{end}}
 		</td>
 	</tr>
