@@ -4,9 +4,11 @@ import (
 	"fmt"
 	"html"
 	"io"
+	"net"
 	"text/template"
 	"time"
 
+	channelzgrpc "google.golang.org/grpc/channelz/grpc_channelz_v1"
 	log "google.golang.org/grpc/grpclog"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -42,6 +44,27 @@ func getFuncs() template.FuncMap {
 		"timestamp": formatTimestamp,
 		"link":      createHyperlink,
 		"isXds":     isXdsTarget,
+		"address":   formatAddress,
+	}
+}
+
+// formatAddress renders a channelz Address proto as a human-readable string,
+// e.g. "127.0.0.1:16001" for a TCP/IP address, rather than the raw byte dump
+// its default String() produces.
+func formatAddress(addr *channelzgrpc.Address) string {
+	if addr == nil {
+		return ""
+	}
+	switch {
+	case addr.GetTcpipAddress() != nil:
+		tcp := addr.GetTcpipAddress()
+		return net.JoinHostPort(net.IP(tcp.GetIpAddress()).String(), fmt.Sprintf("%d", tcp.GetPort()))
+	case addr.GetUdsAddress() != nil:
+		return addr.GetUdsAddress().GetFilename()
+	case addr.GetOtherAddress() != nil:
+		return addr.GetOtherAddress().GetName()
+	default:
+		return ""
 	}
 }
 

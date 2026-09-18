@@ -63,11 +63,7 @@ const channelsTemplateHTML = `
         <td><a href="{{link "channel" .Ref.ChannelId}}"><b>{{.Ref.ChannelId}}</b> {{.Ref.Name}}</td>
         <td>{{.Data.State}}</td>
         <td>{{.Data.Target}}</td>
-		<td>
-			{{range .SubchannelRef}}
-				<a href="{{link "subchannel" .SubchannelId}}"><b>{{.SubchannelId}}</b> {{.Name}}</a><br/>
-			{{end}}
-		</td>
+		<td>{{.SubchannelRef | len}}</td>
 		<td>
 			{{range .ChannelRef}}
 				<a href="{{link "channel" .ChannelId}}"><b>{{.ChannelId}}</b> {{.Name}}</a><br/>

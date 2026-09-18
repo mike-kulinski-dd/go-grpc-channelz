@@ -56,7 +56,7 @@ const socketTemplateHTML = `
 	<tr>
 		<th>Socket Local -> Remote</th>
         <td>
-			<pre>{{.Socket.Local}} -> {{.Socket.Remote}} {{with .Socket.RemoteName}}({{.}}){{end}}</pre>
+			<pre>{{.Socket.Local | address}} -> {{.Socket.Remote | address}} {{with .Socket.RemoteName}}({{.}}){{end}}</pre>
 		</td>
 	</tr>
 	<tr>
