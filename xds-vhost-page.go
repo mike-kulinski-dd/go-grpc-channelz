@@ -137,40 +137,44 @@ func findVirtualHostForChannel(r *xdsResources, resourceName string) *routev3.Vi
 
 const xdsVirtualHostTemplateHTML = `
 {{if .Error}}
-	<p><b>Error:</b> {{.Error}}</p>
+	<div class="notice notice--error"><b>Error:</b> {{.Error}}</div>
 {{end}}
-<table frame=box cellspacing=0 cellpadding=2 class="vertical">
-	<tr><th>Channel</th><td><a href="{{link "channel" .ChannelID}}">{{.ChannelID}}</a></td></tr>
-	<tr><th>Target</th><td>{{.Target}}</td></tr>
-	<tr><th>Authority</th><td>{{if .Authority}}{{.Authority}}{{else}}<i>(default)</i>{{end}}</td></tr>
-	<tr><th>VHDS resource name</th><td>{{.VHDSResourceName}}</td></tr>
-{{if .VirtualHost}}
+<table class="detail">
+	<tr><th>Channel</th><td class="mono"><a href="{{link "channel" .ChannelID}}">{{.ChannelID}}</a></td></tr>
+	<tr><th>Target</th><td class="mono">{{.Target}}</td></tr>
+	<tr><th>Authority</th><td class="mono">{{if .Authority}}{{.Authority}}{{else}}<i>(default)</i>{{end}}</td></tr>
+	<tr><th>VHDS resource name</th><td class="mono">{{.VHDSResourceName}}</td></tr>
 </table>
 
-<h3>Routes</h3>
-<table frame=box cellspacing=0 cellpadding=2>
-	<tr class="header">
-		<th>Match</th>
-		<th>Cluster</th>
-		<th>Weighted clusters</th>
-	</tr>
-	{{range .Routes}}
-	<tr>
-		<td><pre>{{.MatchYAML}}</pre></td>
-		<td>
-			{{with .Cluster}}
-				<a href="{{link "xds" "cluster" $.ChannelID .}}">{{.}}</a>
+{{if .VirtualHost}}
+<section class="section">
+	<h2>Routes <span class="count">{{.Routes | len}}</span></h2>
+	<table class="grid">
+		<thead>
+			<tr>
+				<th>Match</th>
+				<th>Cluster</th>
+				<th>Weighted clusters</th>
+			</tr>
+		</thead>
+		<tbody>
+			{{range .Routes}}
+			<tr>
+				<td><div class="panel"><pre>{{.MatchYAML}}</pre></div></td>
+				<td class="mono">
+					{{with .Cluster}}
+						<a href="{{link "xds" "cluster" $.ChannelID .}}">{{.}}</a>
+					{{end}}
+				</td>
+				<td class="chips">
+					{{range .WeightedClusters}}
+						<a class="chip" href="{{link "xds" "cluster" $.ChannelID .Name}}"><span class="name">{{.Name}}</span> <b>{{.Weight}}</b></a>
+					{{end}}
+				</td>
+			</tr>
 			{{end}}
-		</td>
-		<td>
-			{{range .WeightedClusters}}
-				<a href="{{link "xds" "cluster" $.ChannelID .Name}}">{{.Name}}</a> ({{.Weight}})<br/>
-			{{end}}
-		</td>
-	</tr>
-	{{end}}
-</table>
-{{else}}
-</table>
+		</tbody>
+	</table>
+</section>
 {{end}}
 `

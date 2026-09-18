@@ -43,81 +43,46 @@ func (h *grpcChannelzHandler) getChannel(channelID int64) *channelzgrpc.GetChann
 }
 
 const channelTemplateHTML = `
-<table frame=box cellspacing=0 cellpadding=2 class="vertical">
-    <tr>
-		<th>ChannelId</th>
-        <td>{{.Channel.Ref.ChannelId}}
-	</tr>
-    <tr>
-		<th>Channel Name</th>
-        <td>{{.Channel.Ref.Name}}</td>
-	</tr>
+<table class="detail">
+    <tr><th>ChannelId</th><td class="mono">{{.Channel.Ref.ChannelId}}</td></tr>
+    <tr><th>Channel Name</th><td class="mono">{{.Channel.Ref.Name}}</td></tr>
 	<tr>
         <th>State</th>
-        <td>{{.Channel.Data.State}}</td>
+        <td><span class="state {{.Channel.Data.State | stateClass}}">{{.Channel.Data.State}}</span></td>
 	</tr>
 	<tr>
         <th>Target</th>
-        <td>
+        <td class="mono">
 			{{.Channel.Data.Target}}
 			{{if isXds .Channel.Data.Target}}
 				&nbsp;[<a href="{{link "xds" "vhost" .Channel.Ref.ChannelId}}">view xDS config</a>]
 			{{end}}
 		</td>
 	</tr>
-	<tr>
-        <th>Subchannels</th>
-		<td>
-			{{range .Channel.SubchannelRef}}
-				<a href="{{link "subchannel" .SubchannelId}}"><b>{{.SubchannelId}}</b> {{.Name}}</a><br/>
-			{{end}}
-		</td>
-	</tr>
-	<tr>
-        <th>Child Channels</th>
-		<td>
-			{{range .Channel.ChannelRef}}
-				<a href="{{link "channel" .ChannelId}}"><b>{{.ChannelId}}</b> {{.Name}}</a><br/>
-			{{end}}
-		</td>
-	</tr>
-	<tr>
-        <th>Sockets</th>
-		<td>
-			{{range .Channel.SocketRef}}
-				<a href="{{link "socket" .SocketId}}"><b>{{.SocketId}}</b> {{.Name}}</a><br/>
-			{{end}}
-		</td>
-	</tr>
-	<tr>
-        <th>CreationTimestamp</th>
-        <td>{{.Channel.Data.Trace.CreationTimestamp | timestamp}}</td>
-	</tr>
-	<tr>
-        <th>CallsStarted</th>
-        <td>{{.Channel.Data.CallsStarted}}</td>
-	</tr>
-	<tr>
-        <th>CallsSucceeded</th>
-        <td>{{.Channel.Data.CallsSucceeded}}</td>
-	</tr>
-	<tr>
-        <th>CallsFailed</th>
-        <td>{{.Channel.Data.CallsFailed}}</td>
-	</tr>
-	<tr>
-        <th>LastCallStartedTimestamp</th>
-        <td>{{.Channel.Data.LastCallStartedTimestamp | timestamp}}</td>
-    </tr>
-    <tr>
-        <th>Events</th>
-        <td>
-			<pre>
-			{{- range .Channel.Data.Trace.Events}}
-{{.Severity}} [{{.Timestamp | timestamp}}]: {{.Description}}
-			{{- end -}}
-			</pre>
-		</td>
-    </tr>
+	<tr><th>CreationTimestamp</th><td class="mono">{{.Channel.Data.Trace.CreationTimestamp | timestamp}}</td></tr>
+	<tr><th>CallsStarted</th><td class="num">{{.Channel.Data.CallsStarted}}</td></tr>
+	<tr><th>CallsSucceeded</th><td class="num">{{.Channel.Data.CallsSucceeded}}</td></tr>
+	<tr><th>CallsFailed</th><td class="num">{{.Channel.Data.CallsFailed}}</td></tr>
+	<tr><th>LastCallStartedTimestamp</th><td class="mono">{{.Channel.Data.LastCallStartedTimestamp | timestamp}}</td></tr>
 </table>
+
+<section class="section">
+	<h2>Subchannels <span class="count">{{.Channel.SubchannelRef | len}}</span></h2>
+	{{template "chips-subchannel" .Channel.SubchannelRef}}
+</section>
+
+<section class="section">
+	<h2>Child Channels <span class="count">{{.Channel.ChannelRef | len}}</span></h2>
+	{{template "chips-channel" .Channel.ChannelRef}}
+</section>
+
+<section class="section">
+	<h2>Sockets <span class="count">{{.Channel.SocketRef | len}}</span></h2>
+	{{template "chips-socket" .Channel.SocketRef}}
+</section>
+
+<section class="section">
+	<h2>Events</h2>
+	{{template "events" .Channel.Data.Trace}}
+</section>
 `

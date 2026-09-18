@@ -45,54 +45,23 @@ func (h *grpcChannelzHandler) getServer(serverID int64) *channelzgrpc.GetServerR
 }
 
 const serverTemplateHTML = `
-<table frame=box cellspacing=0 cellpadding=2 class="vertical">
-    <tr>
-		<th>ServerId</th>
-        <td>{{.Server.Ref.ServerId}}</td>
-	</tr>
-    <tr>
-		<th>Server Name</th>
-        <td>{{.Server.Ref.Name}}</td>
-	</tr>
-	<tr>
-		<th>CreationTimestamp</th>
-        <td>{{with .Server.Data.Trace}} {{.CreationTimestamp | timestamp}} {{end}}</td>
-	</tr>
-	<tr>
-        <th>CallsStarted</th>
-        <td>{{.Server.Data.CallsStarted}}</td>
-	</tr>
-	<tr>
-        <th>CallsSucceeded</th>
-        <td>{{.Server.Data.CallsSucceeded}}</td>
-	</tr>
-	<tr>
-        <th>CallsFailed</th>
-        <td>{{.Server.Data.CallsFailed}}</td>
-	</tr>
-	<tr>
-        <th>LastCallStartedTimestamp</th>
-        <td>{{.Server.Data.LastCallStartedTimestamp | timestamp}}</td>
-	</tr>
-	<tr>
-		<th>Sockets</th>
-		<td>
-			{{range .Server.ListenSocket}}
-				<a href="{{link "socket" .SocketId}}"><b>{{.SocketId}}</b> {{.Name}}</a> <br/>
-			{{end}}
-		</td>
-    </tr>
-	{{with .Server.Data.Trace}}
-		<tr>
-			<th>Events</th>
-			<td>
-				<pre>
-				{{- range .Events}}
-{{.Severity}} [{{.Timestamp | timestamp}}]: {{.Description}}
-				{{- end -}}
-				</pre>
-			</td>
-		</tr>
-	{{end}}
+<table class="detail">
+    <tr><th>ServerId</th><td class="mono">{{.Server.Ref.ServerId}}</td></tr>
+    <tr><th>Server Name</th><td class="mono">{{.Server.Ref.Name}}</td></tr>
+	<tr><th>CreationTimestamp</th><td class="mono">{{with .Server.Data.Trace}}{{.CreationTimestamp | timestamp}}{{end}}</td></tr>
+	<tr><th>CallsStarted</th><td class="num">{{.Server.Data.CallsStarted}}</td></tr>
+	<tr><th>CallsSucceeded</th><td class="num">{{.Server.Data.CallsSucceeded}}</td></tr>
+	<tr><th>CallsFailed</th><td class="num">{{.Server.Data.CallsFailed}}</td></tr>
+	<tr><th>LastCallStartedTimestamp</th><td class="mono">{{.Server.Data.LastCallStartedTimestamp | timestamp}}</td></tr>
 </table>
+
+<section class="section">
+	<h2>Sockets <span class="count">{{.Server.ListenSocket | len}}</span></h2>
+	{{template "chips-socket" .Server.ListenSocket}}
+</section>
+
+<section class="section">
+	<h2>Events</h2>
+	{{template "events" .Server.Data.Trace}}
+</section>
 `

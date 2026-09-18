@@ -470,123 +470,148 @@ func joinSlash(parts []string) string {
 
 const xdsClusterTemplateHTML = `
 {{if .Error}}
-	<p><b>Error:</b> {{.Error}}</p>
+	<div class="notice notice--error"><b>Error:</b> {{.Error}}</div>
 {{end}}
-<p>
-	<a href="{{link "channel" .ChannelID}}">&laquo; back to channel {{.ChannelID}}</a>
-	&nbsp;|&nbsp;
-	<a href="{{link "channel" .ChannelID "pools"}}">view subchannel pools</a>
-</p>
+<p><a href="{{link "channel" .ChannelID}}">&laquo; back to channel {{.ChannelID}}</a></p>
 {{if .Cluster}}
-<table frame=box cellspacing=0 cellpadding=2 class="vertical">
-	<tr><th>Cluster name</th><td>{{.Cluster.Name}}</td></tr>
+<table class="detail">
+	<tr><th>Cluster name</th><td class="mono">{{.Cluster.Name}}</td></tr>
 	<tr><th>Type</th><td>{{.Cluster.GetType}}</td></tr>
 	<tr><th>LB policy</th><td>{{.LbPolicy}}</td></tr>
-	<tr><th>EDS service</th><td>{{.EDSServiceName}}</td></tr>
+	<tr><th>EDS service</th><td class="mono">{{.EDSServiceName}}</td></tr>
 	{{with .Cluster.LrsServer}}<tr><th>LRS server</th><td>configured</td></tr>{{end}}
 </table>
 
-<h3>Subchannel pools</h3>
-<p>Subchannels attributed to this cluster, grouped by remote address. A pool of more than one subchannel indicates the dynamic-scaling path opened additional connections to the same IP.</p>
-{{if .Pools}}
-<table frame=box cellspacing=0 cellpadding=2>
-	<tr class="header">
-		<th>Address</th>
-		<th># Subchannels</th>
-		<th>Calls started</th>
-		<th>Calls failed</th>
-	</tr>
-	{{range .Pools}}
-	<tr>
-		<td><a href="{{link "channel" $.ChannelID "pool"}}?addr={{.Address | urlquery}}&cluster={{$.ClusterName | urlquery}}">{{.Address}}</a></td>
-		<td>{{.Count}}</td>
-		<td>{{.CallsStarted}}</td>
-		<td>{{.CallsFailed}}</td>
-	</tr>
-	{{end}}
-</table>
-{{else}}
-<p><i>No subchannels attributed to this cluster.</i></p>
-{{end}}
-
-{{if .IsDNSCluster}}
-<h3>Configured DNS endpoints (from CDS load_assignment)</h3>
-{{if not .Localities}}
-<p><i>No inline endpoints configured.</i></p>
-{{end}}
-{{else}}
-<h3>Endpoints (from EDS)</h3>
-{{end}}
-{{if .Localities}}
-<h4>Locality totals</h4>
-<p>High-level check for zone-aware routing: calls should concentrate in the local locality if it's enabled.</p>
-<table frame=box cellspacing=0 cellpadding=2>
-	<tr class="header">
-		<th>Locality</th>
-		<th>Priority</th>
-		<th>Weight</th>
-		<th>Calls started</th>
-		<th>Calls failed</th>
-	</tr>
-	{{range .Localities}}
-	<tr>
-		<td>{{.Locality}}</td>
-		<td>{{.Priority}}</td>
-		<td>{{.Weight}}</td>
-		<td>{{.TotalCallsStarted}}</td>
-		<td>{{.TotalCallsFailed}}</td>
-	</tr>
-	{{end}}
-</table>
-
-{{range .Localities}}
-<h4>Locality: {{.Locality}} (priority {{.Priority}}, weight {{.Weight}}) &mdash; calls started {{.TotalCallsStarted}}, failed {{.TotalCallsFailed}}</h4>
-<table frame=box cellspacing=0 cellpadding=2>
-	<tr class="header">
-		<th>Address</th>
-		<th>Health</th>
-		<th>Weight</th>
-		<th>Channelz subchannel</th>
-		<th>Calls started</th>
-		<th>Calls failed</th>
-	</tr>
-	{{range .Rows}}
-	<tr>
-		<td>{{.Address}}</td>
-		<td>{{.HealthStatus}}</td>
-		<td>{{.Weight}}</td>
-		<td>
-			{{if .SubchannelID}}
-				<a href="{{link "subchannel" .SubchannelID}}"><b>{{.SubchannelID}}</b> {{.SubchannelName}}</a>
-				{{if gt .PoolSize 1}}
-					&nbsp;<a href="{{link "channel" $.ChannelID "pool"}}?addr={{.Address | urlquery}}&cluster={{$.ClusterName | urlquery}}">({{.PoolSize}} in pool)</a>
-				{{end}}
-			{{else}}
-				&mdash;
+<section class="section">
+	<h2>Subchannel pools <span class="count">{{.Pools | len}}</span></h2>
+	<p>Subchannels attributed to this cluster, grouped by remote address. A pool of more than one subchannel indicates the dynamic-scaling path opened additional connections to the same IP.</p>
+	{{if .Pools}}
+	<table class="grid">
+		<thead>
+			<tr>
+				<th>Address</th>
+				<th class="num"># Subchannels</th>
+				<th class="num">Calls started</th>
+				<th class="num">Calls succeeded</th>
+				<th class="num">Calls failed</th>
+				<th>Subchannels</th>
+			</tr>
+		</thead>
+		<tbody>
+			{{range .Pools}}
+			<tr>
+				<td class="mono"><a href="{{link "channel" $.ChannelID "pool"}}?addr={{.Address | urlquery}}&cluster={{$.ClusterName | urlquery}}">{{.Address}}</a></td>
+				<td class="num">{{.Count}}</td>
+				<td class="num">{{.CallsStarted}}</td>
+				<td class="num">{{.CallsSucceeded}}</td>
+				<td class="num">{{.CallsFailed}}</td>
+				<td class="chips">
+					{{range .SubchannelIDs}}
+						<a class="chip" href="{{link "subchannel" .}}"><b>{{.}}</b></a>
+					{{end}}
+				</td>
+			</tr>
 			{{end}}
-		</td>
-		<td>{{.CallsStarted}}</td>
-		<td>{{.CallsFailed}}</td>
-	</tr>
+		</tbody>
+	</table>
+	{{else}}
+		<span class="empty">No subchannels attributed to this cluster.</span>
 	{{end}}
-</table>
-{{end}}
-{{else if not .IsDNSCluster}}
-<p><i>No EDS endpoints found for service name {{.EDSServiceName}}.</i></p>
-{{end}}
+</section>
+
+<section class="section">
+	{{if .IsDNSCluster}}
+		<h2>Configured DNS endpoints (from CDS load_assignment)</h2>
+		{{if not .Localities}}
+			<span class="empty">No inline endpoints configured.</span>
+		{{end}}
+	{{else}}
+		<h2>Endpoints (from EDS)</h2>
+	{{end}}
+
+	{{if .Localities}}
+	<h3>Locality totals</h3>
+	<p>High-level check for zone-aware routing: calls should concentrate in the local locality if it's enabled.</p>
+	<table class="grid">
+		<thead>
+			<tr>
+				<th>Locality</th>
+				<th class="num">Priority</th>
+				<th class="num">Weight</th>
+				<th class="num">Calls started</th>
+				<th class="num">Calls failed</th>
+			</tr>
+		</thead>
+		<tbody>
+			{{range .Localities}}
+			<tr>
+				<td>{{.Locality}}</td>
+				<td class="num">{{.Priority}}</td>
+				<td class="num">{{.Weight}}</td>
+				<td class="num">{{.TotalCallsStarted}}</td>
+				<td class="num">{{.TotalCallsFailed}}</td>
+			</tr>
+			{{end}}
+		</tbody>
+	</table>
+
+	{{range .Localities}}
+	<h4>Locality: {{.Locality}} (priority {{.Priority}}, weight {{.Weight}}) &mdash; calls started {{.TotalCallsStarted}}, failed {{.TotalCallsFailed}}</h4>
+	<table class="grid">
+		<thead>
+			<tr>
+				<th>Address</th>
+				<th>Health</th>
+				<th class="num">Weight</th>
+				<th>Channelz subchannel</th>
+				<th class="num">Calls started</th>
+				<th class="num">Calls failed</th>
+			</tr>
+		</thead>
+		<tbody>
+			{{range .Rows}}
+			<tr>
+				<td class="mono">{{.Address}}</td>
+				<td>{{.HealthStatus}}</td>
+				<td class="num">{{.Weight}}</td>
+				<td class="mono">
+					{{if .SubchannelID}}
+						<a href="{{link "subchannel" .SubchannelID}}"><b>{{.SubchannelID}}</b> {{.SubchannelName}}</a>
+						{{if gt .PoolSize 1}}
+							&nbsp;<a href="{{link "channel" $.ChannelID "pool"}}?addr={{.Address | urlquery}}&cluster={{$.ClusterName | urlquery}}">({{.PoolSize}} in pool)</a>
+						{{end}}
+					{{else}}
+						&mdash;
+					{{end}}
+				</td>
+				<td class="num">{{.CallsStarted}}</td>
+				<td class="num">{{.CallsFailed}}</td>
+			</tr>
+			{{end}}
+		</tbody>
+	</table>
+	{{end}}
+	{{else if not .IsDNSCluster}}
+		<span class="empty">No EDS endpoints found for service name {{.EDSServiceName}}.</span>
+	{{end}}
+</section>
 
 {{if .UnmatchedSubchannels}}
-<h3>Unmatched subchannels</h3>
-<p>Subchannels of channel {{.ChannelID}} whose address is not in the current EDS dump.</p>
-<table frame=box cellspacing=0 cellpadding=2>
-	<tr class="header"><th>Subchannel</th><th>Target</th></tr>
-	{{range .UnmatchedSubchannels}}
-	<tr>
-		<td><a href="{{link "subchannel" .SubchannelID}}"><b>{{.SubchannelID}}</b> {{.Name}}</a></td>
-		<td>{{.Target}}</td>
-	</tr>
-	{{end}}
-</table>
+<section class="section">
+	<h2>Unmatched subchannels <span class="count">{{.UnmatchedSubchannels | len}}</span></h2>
+	<p>Subchannels of channel {{.ChannelID}} whose address is not in the current EDS dump.</p>
+	<table class="grid">
+		<thead><tr><th>Subchannel</th><th>Target</th></tr></thead>
+		<tbody>
+			{{range .UnmatchedSubchannels}}
+			<tr>
+				<td class="mono"><a href="{{link "subchannel" .SubchannelID}}"><b>{{.SubchannelID}}</b> {{.Name}}</a></td>
+				<td class="mono">{{.Target}}</td>
+			</tr>
+			{{end}}
+		</tbody>
+	</table>
+</section>
 {{end}}
 {{end}}
 `

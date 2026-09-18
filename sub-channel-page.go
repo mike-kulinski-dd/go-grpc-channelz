@@ -48,10 +48,10 @@ func (h *grpcChannelzHandler) getSubchannel(subchannelID int64) *channelzgrpc.Ge
 }
 
 const subChannelsTemplateHTML = `
-<table frame=box cellspacing=0 cellpadding=2 class="vertical">
+<table class="detail">
     <tr>
 		<th>Subchannel</th>
-        <td>
+        <td class="mono">
 			<a href="{{link "subchannel" .Subchannel.Ref.SubchannelId}}">
 				<b>{{.Subchannel.Ref.SubchannelId}}</b> {{.Subchannel.Ref.Name}}
 			</a>
@@ -59,65 +59,33 @@ const subChannelsTemplateHTML = `
 	</tr>
 	<tr>
         <th>State</th>
-        <td>{{.Subchannel.Data.State}}</td>
+        <td><span class="state {{.Subchannel.Data.State | stateClass}}">{{.Subchannel.Data.State}}</span></td>
 	</tr>
-	<tr>
-        <th>Target</th>
-        <td>{{.Subchannel.Data.Target}}</td>
-	</tr>
-	<tr>
-        <th>CreationTimestamp</th>
-        <td>{{.Subchannel.Data.Trace.CreationTimestamp | timestamp}}</td>
-	</tr>
-	<tr>
-        <th>CallsStarted</th>
-        <td>{{.Subchannel.Data.CallsStarted}}</td>
-	</tr>
-	<tr>
-        <th>CallsSucceeded</th>
-        <td>{{.Subchannel.Data.CallsSucceeded}}</td>
-	</tr>
-	<tr>
-        <th>CallsFailed</th>
-        <td>{{.Subchannel.Data.CallsFailed}}</td>
-	</tr>
-	<tr>
-        <th>LastCallStartedTimestamp</th>
-        <td>{{.Subchannel.Data.LastCallStartedTimestamp | timestamp}}</td>
-	</tr>
-	<tr>
-        <th>Child Channels</th>
-		<td>
-			{{range .Subchannel.ChannelRef}}
-				<b><a href="{{link "channel" .ChannelId}}">{{.ChannelId}}</b> {{.Name}}</a><br/>
-			{{end}}
-		</td>
-	</tr>
-	<tr>
-        <th>Child Subchannels</th>
-		<td>
-			{{range .Subchannel.SubchannelRef}}
-				<b><a href="{{link "subchannel" .SubchannelId}}">{{.SubchannelId}}</b> {{.Name}}</a><br/>
-			{{end}}
-		</td>
-	</tr>
-	<tr>
-        <th>Socket</th>
-		<td>
-			{{range .Subchannel.SocketRef}}
-				<b><a href="{{link "socket" .SocketId}}">{{.SocketId}}</b> {{.Name}}</a><br/>
-			{{end}}
-		</td>
-    </tr>
-	<tr>
-        <th>Events</th>
-        <td colspan=100>
-			<pre>
-			{{- range .Subchannel.Data.Trace.Events}}
-{{.Severity}} [{{.Timestamp | timestamp}}]: {{.Description}}
-			{{- end -}}
-			</pre>
-		</td>
-    </tr>
+	<tr><th>Target</th><td class="mono">{{.Subchannel.Data.Target}}</td></tr>
+	<tr><th>CreationTimestamp</th><td class="mono">{{.Subchannel.Data.Trace.CreationTimestamp | timestamp}}</td></tr>
+	<tr><th>CallsStarted</th><td class="num">{{.Subchannel.Data.CallsStarted}}</td></tr>
+	<tr><th>CallsSucceeded</th><td class="num">{{.Subchannel.Data.CallsSucceeded}}</td></tr>
+	<tr><th>CallsFailed</th><td class="num">{{.Subchannel.Data.CallsFailed}}</td></tr>
+	<tr><th>LastCallStartedTimestamp</th><td class="mono">{{.Subchannel.Data.LastCallStartedTimestamp | timestamp}}</td></tr>
 </table>
+
+<section class="section">
+	<h2>Child Channels <span class="count">{{.Subchannel.ChannelRef | len}}</span></h2>
+	{{template "chips-channel" .Subchannel.ChannelRef}}
+</section>
+
+<section class="section">
+	<h2>Child Subchannels <span class="count">{{.Subchannel.SubchannelRef | len}}</span></h2>
+	{{template "chips-subchannel" .Subchannel.SubchannelRef}}
+</section>
+
+<section class="section">
+	<h2>Socket <span class="count">{{.Subchannel.SocketRef | len}}</span></h2>
+	{{template "chips-socket" .Subchannel.SocketRef}}
+</section>
+
+<section class="section">
+	<h2>Events</h2>
+	{{template "events" .Subchannel.Data.Trace}}
+</section>
 `

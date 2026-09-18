@@ -39,12 +39,12 @@ func (h *grpcChannelzHandler) getServers() *channelzgrpc.GetServersResponse {
 
 const serversTemplateHTML = `
 {{define "server-header"}}
-    <tr classs="header">
+    <tr>
         <th>Server</th>
 		<th>CreationTimestamp</th>
-        <th>CallsStarted</th>
-        <th>CallsSucceeded</th>
-        <th>CallsFailed</th>
+        <th class="num">CallsStarted</th>
+        <th class="num">CallsSucceeded</th>
+        <th class="num">CallsFailed</th>
         <th>LastCallStartedTimestamp</th>
 		<th>Sockets</th>
     </tr>
@@ -52,44 +52,39 @@ const serversTemplateHTML = `
 
 {{define "server-body"}}
     <tr>
-        <td><a href="{{link "server" .Ref.ServerId}}"><b>{{.Ref.ServerId}}</b> {{.Ref.Name}}</a></td>
-        <td>{{with .Data.Trace}} {{.CreationTimestamp | timestamp}} {{end}}</td>
-        <td>{{.Data.CallsStarted}}</td>
-        <td>{{.Data.CallsSucceeded}}</td>
-        <td>{{.Data.CallsFailed}}</td>
-        <td>{{.Data.LastCallStartedTimestamp | timestamp}}</td>
-		<td>
+        <td class="mono"><a href="{{link "server" .Ref.ServerId}}"><b>{{.Ref.ServerId}}</b> {{.Ref.Name}}</a></td>
+        <td class="mono">{{with .Data.Trace}}{{.CreationTimestamp | timestamp}}{{end}}</td>
+        <td class="num">{{.Data.CallsStarted}}</td>
+        <td class="num">{{.Data.CallsSucceeded}}</td>
+        <td class="num">{{.Data.CallsFailed}}</td>
+        <td class="mono">{{.Data.LastCallStartedTimestamp | timestamp}}</td>
+		<td class="chips">
 			{{range .ListenSocket}}
-				<a href="{{link "socket" .SocketId}}"><b>{{.SocketId}}</b> {{.Name}}</a> <br/>
+				<a class="chip" href="{{link "socket" .SocketId}}"><b>{{.SocketId}}</b><span class="name">{{.Name}}</span></a>
 			{{end}}
 		</td>
 	</tr>
-	{{with .Data.Trace}}
-		<tr classs="header">
-			<th colspan=100>Events</th>
-		</tr>
-		<tr>
-			<td>&nbsp;</td>
-			<td colspan=100>
-				<pre>
-				{{- range .Events}}
-{{.Severity}} [{{.Timestamp | timestamp}}]: {{.Description}}
-				{{- end -}}
-				</pre>
-			</td>
-		</tr>
-	{{end}}
+	<tr class="subrow">
+		<td colspan="7">
+			<details>
+				<summary>Events</summary>
+				{{template "events" .Data.Trace}}
+			</details>
+		</td>
+	</tr>
 {{end}}
 
-<p><table class="section-header" width=100%><tr align=center><td>Servers</td></tr></table></p>
-<table frame=box cellspacing=0 cellpadding=2>
-    <tr class="header">
-		<th colspan=100 style="text-align:left">Servers: {{.Server | len}}</th>
-    </tr>
-
-	{{template "server-header"}}
-	{{range .Server}}
-		{{template "server-body" .}}
-	{{end}}
-</table>
+<section class="section">
+	<h2>Servers: {{.Server | len}}</h2>
+	<table class="grid">
+		<thead>
+			{{template "server-header"}}
+		</thead>
+		<tbody>
+			{{range .Server}}
+				{{template "server-body" .}}
+			{{end}}
+		</tbody>
+	</table>
+</section>
 `

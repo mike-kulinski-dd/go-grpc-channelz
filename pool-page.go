@@ -48,11 +48,6 @@ type poolRow struct {
 	CallsFailed    int64
 }
 
-type poolsPageData struct {
-	ChannelID int64
-	Pools     []poolRow
-}
-
 type poolMemberRow struct {
 	SubchannelID   int64
 	Name           string
@@ -70,42 +65,6 @@ type poolDetailPageData struct {
 	MaxConcurrentStreams    uint32
 	MaxConcurrentStreamsSet bool
 	Members                 []poolMemberRow
-}
-
-// WriteSubchannelPoolsPage writes the per-channel list of subchannel pools (one row per remote address).
-func (h *grpcChannelzHandler) WriteSubchannelPoolsPage(w io.Writer, channelID int64) {
-	writeHeader(w, fmt.Sprintf("ChannelZ subchannel pools (channel %d)", channelID))
-	h.writeSubchannelPools(w, channelID)
-	writeFooter(w)
-}
-
-func (h *grpcChannelzHandler) writeSubchannelPools(w io.Writer, channelID int64) {
-	byAddr, info := h.subchannelsByAddress(channelID)
-	d := &poolsPageData{ChannelID: channelID}
-	for addr, ids := range byAddr {
-		row := poolRow{
-			Address:       addr,
-			Count:         len(ids),
-			SubchannelIDs: ids,
-		}
-		for _, id := range ids {
-			si := info[id]
-			row.CallsStarted += si.CallsStarted
-			row.CallsSucceeded += si.CallsSucceeded
-			row.CallsFailed += si.CallsFailed
-		}
-		d.Pools = append(d.Pools, row)
-	}
-	// Largest pools first, then by address for stable order.
-	sort.Slice(d.Pools, func(i, j int) bool {
-		if d.Pools[i].Count != d.Pools[j].Count {
-			return d.Pools[i].Count > d.Pools[j].Count
-		}
-		return d.Pools[i].Address < d.Pools[j].Address
-	})
-	if err := subchannelPoolsTemplate.Execute(w, d); err != nil {
-		log.Errorf("channelz: executing template: %v", err)
-	}
 }
 
 // WriteSubchannelPoolPage writes the detail page for one address — every subchannel pointing at it.
@@ -153,44 +112,13 @@ func (h *grpcChannelzHandler) writeSubchannelPool(w io.Writer, channelID int64, 
 	}
 }
 
-const subchannelPoolsTemplateHTML = `
-<p><a href="{{link "channel" .ChannelID}}">&laquo; back to channel {{.ChannelID}}</a></p>
-<p>Subchannels grouped by their remote address. Pools with more than one subchannel indicate that the dynamic-scaling path opened additional connections to the same IP (e.g. on MAX_CONCURRENT_STREAMS).</p>
-{{if .Pools}}
-<table frame=box cellspacing=0 cellpadding=2>
-	<tr class="header">
-		<th>Address</th>
-		<th># Subchannels</th>
-		<th>Subchannels</th>
-	</tr>
-	{{range .Pools}}
-	<tr>
-		<td><a href="{{link "channel" $.ChannelID "pool"}}?addr={{.Address | urlquery}}">{{.Address}}</a></td>
-		<td>{{.Count}}</td>
-		<td>
-			{{range .SubchannelIDs}}
-				<a href="{{link "subchannel" .}}"><b>{{.}}</b></a>
-			{{end}}
-		</td>
-	</tr>
-	{{end}}
-</table>
-{{else}}
-<p><i>No subchannels found for this channel.</i></p>
-{{end}}
-`
-
 const subchannelPoolTemplateHTML = `
-<p>
-	<a href="{{link "channel" .ChannelID}}">&laquo; back to channel {{.ChannelID}}</a>
-	&nbsp;|&nbsp;
-	<a href="{{link "channel" .ChannelID "pools"}}">all pools</a>
-</p>
-<table frame=box cellspacing=0 cellpadding=2 class="vertical">
-	<tr><th>Channel</th><td>{{.ChannelID}}</td></tr>
-	<tr><th>Address</th><td>{{.Address}}</td></tr>
-	<tr><th># Subchannels</th><td>{{len .Members}}</td></tr>
-	{{if .ClusterName}}<tr><th>Cluster</th><td>{{.ClusterName}}</td></tr>{{end}}
+<p><a href="{{link "channel" .ChannelID}}">&laquo; back to channel {{.ChannelID}}</a></p>
+<table class="detail">
+	<tr><th>Channel</th><td class="mono">{{.ChannelID}}</td></tr>
+	<tr><th>Address</th><td class="mono">{{.Address}}</td></tr>
+	<tr><th># Subchannels</th><td class="num">{{len .Members}}</td></tr>
+	{{if .ClusterName}}<tr><th>Cluster</th><td class="mono">{{.ClusterName}}</td></tr>{{end}}
 	<tr><th>max_concurrent_streams</th><td>
 		{{- if .MaxConcurrentStreamsSet}}{{.MaxConcurrentStreams}}
 		{{- else if .ClusterName}}<i>(unset on cluster {{.ClusterName}})</i>
@@ -198,32 +126,42 @@ const subchannelPoolTemplateHTML = `
 		{{- end}}
 	</td></tr>
 </table>
-{{if .Members}}
-<table frame=box cellspacing=0 cellpadding=2>
-	<tr class="header">
-		<th>Subchannel</th>
-		<th>Name</th>
-		<th>State</th>
-		<th>Calls started</th>
-		<th>Calls failed</th>
-		<th>Socket(s)</th>
-	</tr>
-	{{range .Members}}
-	<tr>
-		<td><a href="{{link "subchannel" .SubchannelID}}"><b>{{.SubchannelID}}</b></a></td>
-		<td>{{.Name}}</td>
-		<td>{{.State}}</td>
-		<td>{{.CallsStarted}}</td>
-		<td>{{.CallsFailed}}</td>
-		<td>
-			{{range .SocketIDs}}
-				<a href="{{link "socket" .}}">{{.}}</a>
+
+<section class="section">
+	<h2>Members <span class="count">{{.Members | len}}</span></h2>
+	{{if .Members}}
+	<table class="grid">
+		<thead>
+			<tr>
+				<th>Subchannel</th>
+				<th>Name</th>
+				<th>State</th>
+				<th class="num">Calls started</th>
+				<th class="num">Calls succeeded</th>
+				<th class="num">Calls failed</th>
+				<th>Socket(s)</th>
+			</tr>
+		</thead>
+		<tbody>
+			{{range .Members}}
+			<tr>
+				<td class="mono"><a href="{{link "subchannel" .SubchannelID}}"><b>{{.SubchannelID}}</b></a></td>
+				<td>{{.Name}}</td>
+				<td><span class="state {{.State | stateClass}}">{{.State}}</span></td>
+				<td class="num">{{.CallsStarted}}</td>
+				<td class="num">{{.CallsSucceeded}}</td>
+				<td class="num">{{.CallsFailed}}</td>
+				<td class="chips">
+					{{range .SocketIDs}}
+						<a class="chip" href="{{link "socket" .}}"><b>{{.}}</b></a>
+					{{end}}
+				</td>
+			</tr>
 			{{end}}
-		</td>
-	</tr>
+		</tbody>
+	</table>
+	{{else}}
+		<span class="empty">No subchannels currently targeting this address.</span>
 	{{end}}
-</table>
-{{else}}
-<p><i>No subchannels currently targeting this address.</i></p>
-{{end}}
+</section>
 `

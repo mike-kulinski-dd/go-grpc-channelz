@@ -48,7 +48,7 @@ func (h *grpcChannelzHandler) getTopChannels(start int64) *channelzgrpc.GetTopCh
 
 const channelsTemplateHTML = `
 {{define "channel-header"}}
-    <tr classs="header">
+    <tr>
         <th>Channel</th>
         <th>State</th>
         <th>Target</th>
@@ -56,56 +56,55 @@ const channelsTemplateHTML = `
         <th>Child Channels</th>
         <th>Sockets</th>
         <th>CreationTimestamp</th>
-        <th>CallsStarted</th>
-        <th>CallsSucceeded</th>
-        <th>CallsFailed</th>
+        <th class="num">CallsStarted</th>
+        <th class="num">CallsSucceeded</th>
+        <th class="num">CallsFailed</th>
         <th>LastCallStartedTimestamp</th>
     </tr>
 {{end}}
 
 {{define "channel-body"}}
     <tr>
-        <td><a href="{{link "channel" .Ref.ChannelId}}"><b>{{.Ref.ChannelId}}</b> {{.Ref.Name}}</td>
-        <td>{{.Data.State}}</td>
-        <td>{{.Data.Target}}</td>
-		<td>{{.SubchannelRef | len}}</td>
-		<td>
+        <td class="mono"><a href="{{link "channel" .Ref.ChannelId}}"><b>{{.Ref.ChannelId}}</b> {{.Ref.Name}}</a></td>
+        <td><span class="state {{.Data.State | stateClass}}">{{.Data.State}}</span></td>
+        <td class="mono">{{.Data.Target}}</td>
+		<td class="num">{{.SubchannelRef | len}}</td>
+		<td class="chips">
 			{{range .ChannelRef}}
-				<a href="{{link "channel" .ChannelId}}"><b>{{.ChannelId}}</b> {{.Name}}</a><br/>
+				<a class="chip" href="{{link "channel" .ChannelId}}"><b>{{.ChannelId}}</b><span class="name">{{.Name}}</span></a>
 			{{end}}
 		</td>
-		<td>
+		<td class="chips">
 			{{range .SocketRef}}
-				<a href="{{link "socket" .SocketId}}"><b>{{.SocketId}}</b> {{.Name}}</a><br/>
+				<a class="chip" href="{{link "socket" .SocketId}}"><b>{{.SocketId}}</b><span class="name">{{.Name}}</span></a>
 			{{end}}
 		</td>
-        <td>{{.Data.Trace.CreationTimestamp | timestamp}}</td>
-        <td>{{.Data.CallsStarted}}</td>
-        <td>{{.Data.CallsSucceeded}}</td>
-        <td>{{.Data.CallsFailed}}</td>
-        <td>{{.Data.LastCallStartedTimestamp | timestamp}}</td>
+        <td class="mono">{{.Data.Trace.CreationTimestamp | timestamp}}</td>
+        <td class="num">{{.Data.CallsStarted}}</td>
+        <td class="num">{{.Data.CallsSucceeded}}</td>
+        <td class="num">{{.Data.CallsFailed}}</td>
+        <td class="mono">{{.Data.LastCallStartedTimestamp | timestamp}}</td>
 	</tr>
 {{end}}
-<p><table class="section-header" width=100%><tr align=center><td>Clients</td></tr></table></p>
-<table frame=box cellspacing=0 cellpadding=2>
-    <tr class="header">
-		<th colspan=100 style="text-align:left">Top Channels: {{.Channel | len}}</th>
-    </tr>
 
-	{{template "channel-header"}}
-	{{$last := .Channel}}
-	{{range .Channel}}
-		{{template "channel-body" .}}
-		{{$last = .}}
+<section class="section">
+	<h2>Clients: {{.Channel | len}}</h2>
+	<table class="grid">
+		<thead>
+			{{template "channel-header"}}
+		</thead>
+		<tbody>
+			{{$last := ""}}
+			{{range .Channel}}
+				{{template "channel-body" .}}
+				{{$last = .}}
+			{{end}}
+		</tbody>
+	</table>
+	{{if and .Channel (not .End)}}
+		<nav class="pager">
+			<a href="{{link "channels"}}?start={{$last.Ref.ChannelId}}">Next&nbsp;&gt;</a>
+		</nav>
 	{{end}}
-	{{if not .End}}
-		<tr>
-			<th colspan=100 style="text-align:left">
-				<a href="{{link "channels"}}?start={{$last.Ref.ChannelId}}">Next&nbsp;&gt;</a>
-			</th>
-		</tr>
-	{{end}}
-</table>
-<br/>
-<br/>
+</section>
 `
