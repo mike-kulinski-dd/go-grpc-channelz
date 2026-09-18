@@ -76,13 +76,17 @@ type endpointRow struct {
 	SubchannelID   int64 // 0 means no match
 	SubchannelName string
 	PoolSize       int // number of subchannels for this address; >1 means a duplicate pool
+	CallsStarted   int64
+	CallsFailed    int64
 }
 
 type localityGroup struct {
-	Locality string
-	Priority uint32
-	Weight   uint32
-	Rows     []endpointRow
+	Locality          string
+	Priority          uint32
+	Weight            uint32
+	Rows              []endpointRow
+	TotalCallsStarted int64
+	TotalCallsFailed  int64
 }
 
 type unmatchedSubchannelRow struct {
@@ -194,12 +198,19 @@ func (h *grpcChannelzHandler) getXdsCluster(channelID int64, clusterName string)
 					row.PoolSize = len(ids)
 					for _, id := range ids {
 						matched[id] = true
+						row.CallsStarted += subInfo[id].CallsStarted
+						row.CallsFailed += subInfo[id].CallsFailed
 					}
 				}
 				group.Rows = append(group.Rows, row)
+				group.TotalCallsStarted += row.CallsStarted
+				group.TotalCallsFailed += row.CallsFailed
 			}
 			d.Localities = append(d.Localities, group)
 		}
+		sort.Slice(d.Localities, func(i, j int) bool {
+			return d.Localities[i].Locality < d.Localities[j].Locality
+		})
 	}
 
 	// Addresses owned by sibling clusters this same xDS channel watches.
@@ -441,14 +452,37 @@ const xdsClusterTemplateHTML = `
 <h3>Endpoints (from EDS)</h3>
 {{end}}
 {{if .Localities}}
+<h4>Locality totals</h4>
+<p>High-level check for zone-aware routing: calls should concentrate in the local locality if it's enabled.</p>
+<table frame=box cellspacing=0 cellpadding=2>
+	<tr class="header">
+		<th>Locality</th>
+		<th>Priority</th>
+		<th>Weight</th>
+		<th>Calls started</th>
+		<th>Calls failed</th>
+	</tr>
+	{{range .Localities}}
+	<tr>
+		<td>{{.Locality}}</td>
+		<td>{{.Priority}}</td>
+		<td>{{.Weight}}</td>
+		<td>{{.TotalCallsStarted}}</td>
+		<td>{{.TotalCallsFailed}}</td>
+	</tr>
+	{{end}}
+</table>
+
 {{range .Localities}}
-<h4>Locality: {{.Locality}} (priority {{.Priority}}, weight {{.Weight}})</h4>
+<h4>Locality: {{.Locality}} (priority {{.Priority}}, weight {{.Weight}}) &mdash; calls started {{.TotalCallsStarted}}, failed {{.TotalCallsFailed}}</h4>
 <table frame=box cellspacing=0 cellpadding=2>
 	<tr class="header">
 		<th>Address</th>
 		<th>Health</th>
 		<th>Weight</th>
 		<th>Channelz subchannel</th>
+		<th>Calls started</th>
+		<th>Calls failed</th>
 	</tr>
 	{{range .Rows}}
 	<tr>
@@ -465,6 +499,8 @@ const xdsClusterTemplateHTML = `
 				&mdash;
 			{{end}}
 		</td>
+		<td>{{.CallsStarted}}</td>
+		<td>{{.CallsFailed}}</td>
 	</tr>
 	{{end}}
 </table>
