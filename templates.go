@@ -23,6 +23,7 @@ var (
 	serversTemplate    = parseTemplate("servers", serversTemplateHTML)
 	serverTemplate     = parseTemplate("server", serverTemplateHTML)
 	socketTemplate     = parseTemplate("socket", socketTemplateHTML)
+	xdsVirtualHostsTemplate = parseTemplate("xds-vhosts", xdsVirtualHostsTemplateHTML)
 	xdsVirtualHostTemplate = parseTemplate("xds-vhost", xdsVirtualHostTemplateHTML)
 	xdsClusterTemplate     = parseTemplate("xds-cluster", xdsClusterTemplateHTML)
 	subchannelPoolsTemplate = parseTemplate("subchannel-pools", subchannelPoolsTemplateHTML)
