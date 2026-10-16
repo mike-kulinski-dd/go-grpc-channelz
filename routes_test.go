@@ -39,9 +39,13 @@ func (m *mockHandler) WriteSocketPage(w io.Writer, c int64) {
 	// nolint:errcheck
 	w.Write([]byte(fmt.Sprintf("socket %d", c)))
 }
-func (m *mockHandler) WriteXdsVirtualHostPage(w io.Writer, c int64) {
+func (m *mockHandler) WriteXdsVirtualHostsPage(w io.Writer, c int64) {
 	// nolint:errcheck
-	w.Write([]byte(fmt.Sprintf("xds-vhost %d", c)))
+	w.Write([]byte(fmt.Sprintf("xds-vhosts %d", c)))
+}
+func (m *mockHandler) WriteXdsVirtualHostPage(w io.Writer, c int64, n string) {
+	// nolint:errcheck
+	w.Write([]byte(fmt.Sprintf("xds-vhost %d %s", c, n)))
 }
 func (m *mockHandler) WriteXdsClusterPage(w io.Writer, c int64, n string) {
 	// nolint:errcheck
@@ -72,7 +76,8 @@ func TestCreateRouter(t *testing.T) {
 		"/channelz/subchannel/5":     "subchannel 5",
 		"/channelz/server/3":         "server 3",
 		"/channelz/socket/3":         "socket 3",
-		"/channelz/xds/vhost/7":              "xds-vhost 7",
+		"/channelz/xds/vhost/7":              "xds-vhosts 7",
+		"/channelz/xds/vhost/7/sidecar/http2/a.workloads.dash": "xds-vhost 7 sidecar/http2/a.workloads.dash",
 		"/channelz/xds/cluster/7/my-cluster": "xds-cluster 7 my-cluster",
 		"/channelz/channel/4/pools":                "pools 4",
 		"/channelz/channel/4/pool?addr=1.2.3.4:80&cluster=c1": "pool 4 1.2.3.4:80 c1",
